@@ -4,7 +4,7 @@ import Image from "next/image";
 import { Pencil, Trash2, ExternalLink } from "lucide-react";
 import { toAbsoluteUrl } from "@/lib/uploads";
 
-export default function PlatformsTable({ platforms, onEdit, onDelete }) {
+export default function PlatformsTable({ platforms, onDelete, onEdit }) {
     return (
         <div className="border border-jet rounded-2xl overflow-hidden">
             <table className="w-full text-sm">
@@ -36,6 +36,7 @@ export default function PlatformsTable({ platforms, onEdit, onDelete }) {
                                     ) : (
                                         <div className="w-8 h-8 rounded-lg border border-jet" />
                                     )}
+
                                     <div className="flex flex-col">
                                         <span className="font-medium">{p.name}</span>
                                         {p.description ? (
@@ -79,14 +80,19 @@ export default function PlatformsTable({ platforms, onEdit, onDelete }) {
                             <td className="px-4 py-2">
                                 <div className="flex items-center gap-2">
                                     <button
-                                        onClick={() => onEdit(p)}
+                                        type="button"
+                                        onClick={() => onEdit?.(p.id)}
                                         className="px-3 py-2 rounded-full border border-jet hover:bg-jet transition"
+                                        aria-label={`Edit ${p.name}`}
                                     >
                                         <Pencil size={16} />
                                     </button>
+
                                     <button
-                                        onClick={() => onDelete(p.id)}
+                                        type="button"
+                                        onClick={() => onDelete?.(p.id)}
                                         className="px-3 py-2 rounded-full border border-jet hover:bg-jet transition text-wrong"
+                                        aria-label={`Delete ${p.name}`}
                                     >
                                         <Trash2 size={16} />
                                     </button>

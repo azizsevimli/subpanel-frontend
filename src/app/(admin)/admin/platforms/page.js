@@ -1,41 +1,41 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, LayoutGrid, Search, RefreshCw } from "lucide-react";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
 import api from "@/lib/api";
 import LoadingSpinner from "@/components/loading-spinner";
 import BorderButton from "@/components/buttons/border-button";
 import PlatformsTable from "@/components/admin/platforms-table";
-import PlatformModal from "@/components/admin/platform-modal";
 
 export default function AdminPlatformsPage() {
+    const router = useRouter();
     const { loading: authLoading } = useRequireAdmin();
 
     const [items, setItems] = useState([]);
     const [meta, setMeta] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+
     const [search, setSearch] = useState("");
     const [status, setStatus] = useState(""); // "", "ACTIVE", "INACTIVE"
-    const [modalOpen, setModalOpen] = useState(false);
-    const [editing, setEditing] = useState(null); // platform obj
 
     const query = useMemo(() => {
         const params = new URLSearchParams();
         if (search.trim()) params.set("search", search.trim());
         if (status) params.set("status", status);
-        // pagination eklemek istersen:
-        // params.set("page", "1"); params.set("limit", "20");
         const q = params.toString();
         return q ? `?${q}` : "";
     }, [search, status]);
 
-    async function fetchPlatforms() {
+    const fetchPlatforms = useCallback(async () => {
         try {
             setLoading(true);
             setError("");
+
             const res = await api.get(`/admin/platforms${query}`);
+
             setItems(res.data.items || []);
             setMeta(res.data.meta || null);
         } catch (err) {
@@ -44,23 +44,12 @@ export default function AdminPlatformsPage() {
         } finally {
             setLoading(false);
         }
-    }
+    }, [query]);
 
     useEffect(() => {
         if (authLoading) return;
         fetchPlatforms();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [authLoading, query]);
-
-    function openCreate() {
-        setEditing(null);
-        setModalOpen(true);
-    }
-
-    function openEdit(platform) {
-        setEditing(platform);
-        setModalOpen(true);
-    }
+    }, [authLoading, fetchPlatforms]);
 
     async function handleDelete(platformId) {
         const ok = window.confirm("Bu platform silinsin mi?");
@@ -69,7 +58,6 @@ export default function AdminPlatformsPage() {
         try {
             setError("");
             await api.delete(`/admin/platforms/${platformId}`);
-            // optimistik update:
             setItems((prev) => prev.filter((p) => p.id !== platformId));
         } catch (err) {
             console.error(err);
@@ -77,10 +65,8 @@ export default function AdminPlatformsPage() {
         }
     }
 
-    async function handleSaved() {
-        setModalOpen(false);
-        setEditing(null);
-        await fetchPlatforms(); // listeyi yenile
+    function handleEdit(platformId) {
+        router.push(`/admin/platforms/edit/${platformId}`);
     }
 
     if (authLoading) {
@@ -100,6 +86,7 @@ export default function AdminPlatformsPage() {
                             <LayoutGrid className="inline mb-1 mr-2" />
                             <span>Platforms</span>
                         </h1>
+
                         {meta && (
                             <p className="text-sm text-silver">
                                 Total: {meta.total} | Page: {meta.page} / {meta.totalPages}
@@ -116,7 +103,7 @@ export default function AdminPlatformsPage() {
                         <BorderButton
                             text="New Platform"
                             icon={<Plus size={16} strokeWidth={3} />}
-                            onClick={openCreate}
+                            onClick={() => router.push("/admin/platforms/new")}
                         />
                     </div>
                 </div>
@@ -136,7 +123,7 @@ export default function AdminPlatformsPage() {
                     <select
                         value={status}
                         onChange={(e) => setStatus(e.target.value)}
-                        className="border border-jet rounded-full px-4 py-2 bg-night text-sm w-full md:w-56"
+                        className="w-full md:w-56 px-6 py-2 rounded-full border border-jet bg-night text-sm"
                     >
                         <option value="">All</option>
                         <option value="ACTIVE">Active</option>
@@ -161,21 +148,11 @@ export default function AdminPlatformsPage() {
                 ) : (
                     <PlatformsTable
                         platforms={items}
-                        onEdit={openEdit}
                         onDelete={handleDelete}
+                        onEdit={handleEdit}
                     />
                 )}
             </div>
-
-            <PlatformModal
-                open={modalOpen}
-                onClose={() => {
-                    setModalOpen(false);
-                    setEditing(null);
-                }}
-                initialData={editing}
-                onSaved={handleSaved}
-            />
         </main>
     );
 }
