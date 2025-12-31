@@ -7,9 +7,10 @@ import api from "@/lib/api";
 
 import LoadingSpinner from "@/components/loading-spinner";
 import BorderButton from "@/components/buttons/border-button";
-import { ExternalLink } from "lucide-react";
+import Button from "@/components/buttons/button";
 import Image from "next/image";
 import { toAbsoluteUrl } from "@/lib/uploads";
+import { Plus } from "lucide-react";
 
 function formatValue(val) {
     if (val === null || val === undefined) return "-";
@@ -25,6 +26,21 @@ export default function MySubscriptionsPage() {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+
+    async function handleDelete(id) {
+        const ok = window.confirm("Bu abonelik silinsin mi?");
+        if (!ok) return;
+
+        try {
+            setError("");
+            await api.delete(`/subscriptions/${id}`);
+            // optimistik update
+            setItems((prev) => prev.filter((x) => x.id !== id));
+        } catch (err) {
+            console.error(err);
+            setError(err?.response?.data?.message || "Silme sırasında hata oluştu.");
+        }
+    }
 
     useEffect(() => {
         if (initialLoading) return;
@@ -77,6 +93,7 @@ export default function MySubscriptionsPage() {
 
                     <BorderButton
                         text="Add Subscription"
+                        icon={<Plus size={16} strokeWidth={3} />}
                         onClick={() => router.push("/my-subscriptions/add-subscription")}
                     />
                 </div>
@@ -96,15 +113,14 @@ export default function MySubscriptionsPage() {
                         {items.map((s) => (
                             <div key={s.id} className="rounded-3xl border border-jet p-6 space-y-4">
                                 {/* Platform header */}
-                                <div className="flex items-center justify-between gap-4">
+                                <div className="flex items-center justify-start">
                                     <div className="flex items-center gap-3 min-w-0">
                                         {s.platform?.logoUrl ? (
                                             <Image
                                                 src={toAbsoluteUrl(s.platform.logoUrl)}
                                                 alt={s.platform.name}
-                                                width={40}
-                                                height={40}
-                                                className="rounded-xl border border-jet object-cover"
+                                                width={64}
+                                                height={64}
                                             />
                                         ) : (
                                             <div className="w-10 h-10 rounded-xl border border-jet" />
@@ -116,10 +132,6 @@ export default function MySubscriptionsPage() {
                                                 {new Date(s.createdAt).toLocaleString()}
                                             </p>
                                         </div>
-                                    </div>
-
-                                    <div className="text-xs text-silver">
-                                        {s.platform?.status}
                                     </div>
                                 </div>
 
@@ -138,7 +150,6 @@ export default function MySubscriptionsPage() {
                                                     <td className="px-4 py-2">
                                                         <div className="flex items-center gap-2">
                                                             <span className="font-medium">{f.label}</span>
-                                                            <span className="text-xs text-silver">({f.type})</span>
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-2 text-silver">
@@ -150,11 +161,15 @@ export default function MySubscriptionsPage() {
                                     </table>
                                 </div>
 
-                                {/* Actions (şimdilik boş: edit/delete sonra ekleriz) */}
-                                <div className="flex justify-end">
+                                <div className="flex justify-end gap-3">
                                     <BorderButton
-                                        text="Details"
-                                        onClick={() => alert("Detay sayfasını sonra ekleyelim.")}
+                                        text="Delete"
+                                        onClick={() => handleDelete(s.id)}
+                                        className="border-wrong hover:bg-wrong text-wrong"
+                                    />
+                                    <Button
+                                        text="Edit"
+                                        onClick={() => router.push(`/my-subscriptions/edit/${s.id}`)}
                                     />
                                 </div>
                             </div>
