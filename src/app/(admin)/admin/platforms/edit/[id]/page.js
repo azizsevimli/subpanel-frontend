@@ -53,8 +53,7 @@ export default function EditPlatformPage() {
     const params = useParams();
     const { loading: authLoading } = useRequireAdmin();
 
-    const idParam = params?.id;
-    const platformId = Number(idParam);
+    const platformId = String(params?.id || "").trim();
 
     const [pageLoading, setPageLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
@@ -170,7 +169,7 @@ export default function EditPlatformPage() {
     useEffect(() => {
         if (authLoading) return;
 
-        if (!Number.isFinite(platformId) || platformId <= 0) {
+        if (!platformId) {
             setError("Geçersiz platform id.");
             setPageLoading(false);
             return;

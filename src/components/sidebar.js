@@ -4,14 +4,12 @@ import { usePathname } from "next/navigation";
 import { Dot } from "lucide-react";
 import Link from "next/link";
 
-export default function AdminSidebar({ className = "" }) {
+export default function Sidebar({ className = "" }) {
     const pathname = usePathname();
 
     const menuItems = [
-        { id: 0, name: "Dashboard", href: "/admin/dashboard" },
-        { id: 1, name: "Platforms", href: "/admin/platforms" },
-        { id: 2, name: "Users", href: "/admin/users" },
-        { id: 3, name: "Admins", href: "/admin/admins" },
+        { id: 0, name: "Dashboard", href: "/dashboard" },
+        { id: 1, name: "My Subscriptions", href: "/my-subscriptions" },
     ];
 
     return (
