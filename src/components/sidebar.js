@@ -10,6 +10,8 @@ export default function Sidebar({ className = "" }) {
     const menuItems = [
         { id: 0, name: "Dashboard", href: "/dashboard" },
         { id: 1, name: "My Subscriptions", href: "/my-subscriptions" },
+        { id: 2, name: "Calendar", href: "/calendar" },
+        { id: 3, name: "Settings", href: "/settings" },
     ];
 
     return (
