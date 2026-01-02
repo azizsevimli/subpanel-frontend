@@ -110,8 +110,7 @@ export default function MySubscriptionsPage() {
                     <BorderButton
                         text="Add Subscription"
                         icon={<Plus size={16} strokeWidth={3} />}
-                        // ✅ Senin projende add sayfası: /my-subscription/add-subscription
-                        onClick={() => router.push("/my-subscription/add-subscription")}
+                        onClick={() => router.push("/my-subscriptions/add-subscription")}
                     />
                 </div>
 

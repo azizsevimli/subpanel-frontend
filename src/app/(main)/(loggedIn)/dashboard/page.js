@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-
+import { useDashboardCharts } from "@/hooks/useDashboardCharts";
+import MonthlySpendChart from "@/components/main/dashboard/monthly-spend-chart";
+import PlatformSpendPie from "@/components/main/dashboard/platform-spend-pie";
+import RenewalsWeekBar from "@/components/main/dashboard/renewals-week-bar";
 import LoadingSpinner from "@/components/loading-spinner";
 import BorderButton from "@/components/buttons/border-button";
 import Image from "next/image";
@@ -36,6 +39,8 @@ export default function UserDashboardPage() {
     const [recent, setRecent] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const enabled = !initialLoading && isAuthenticated;
+    const { data: charts, loading: chartsLoading, error: chartsError } = useDashboardCharts({ enabled, months: 6 });
 
     async function fetchDashboard() {
         try {
@@ -138,6 +143,14 @@ export default function UserDashboardPage() {
                     </p>
                 )}
 
+                {
+                    chartsError && (
+                        <p className="text-sm text-wrong border border-wrong/40 rounded-xl px-4 py-2">
+                            {chartsError}
+                        </p>
+                    )
+                }
+
                 {/* KPI Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                     <StatCard title="Total Subscriptions" value={stats?.totalSubscriptions ?? 0} />
@@ -153,6 +166,26 @@ export default function UserDashboardPage() {
                         subtitle="Active subscriptions only"
                     />
                 </div>
+
+                <section className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    {chartsLoading ? (
+                        <div className="flex justify-center py-10 xl:col-span-2">
+                            <LoadingSpinner />
+                        </div>
+                    ) : charts ? (
+                        <>
+                            <MonthlySpendChart series={charts.monthlySpendSeries} />
+
+                            {/* Pie: Multi currency ise ilk currency’yi göster (MVP) */}
+                            <PlatformSpendPie byCurrency={charts.spendByPlatform?.[0]} />
+
+                            <div className="xl:col-span-2">
+                                <RenewalsWeekBar data={charts.renewalsThisMonth} />
+                            </div>
+                        </>
+                    ) : null}
+                </section>
+
 
                 {/* Recent */}
                 <section className="rounded-3xl border border-jet p-6 space-y-4">
