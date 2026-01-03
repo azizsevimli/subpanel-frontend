@@ -13,6 +13,8 @@ import BorderButton from "@/components/buttons/border-button";
 import Image from "next/image";
 import { toAbsoluteUrl } from "@/lib/uploads";
 import { LayoutGrid, Plus, Pencil, Trash2 } from "lucide-react";
+import WeeklyPaymentsCalendar from "@/components/main/dashboard/weekly-payments-calendar";
+
 
 function StatCard({ title, value, subtitle }) {
     return (
@@ -185,6 +187,8 @@ export default function UserDashboardPage() {
                         </>
                     ) : null}
                 </section>
+
+                <WeeklyPaymentsCalendar />
 
 
                 {/* Recent */}

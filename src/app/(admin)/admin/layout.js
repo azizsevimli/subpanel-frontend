@@ -1,5 +1,6 @@
 import AdminHeader from "@/components/admin/header";
 import AdminSidebar from "@/components/admin/sidebar";
+import AdminFooter from "@/components/admin/footer";
 
 export default function AdminLayout({ children }) {
     return (
@@ -11,6 +12,7 @@ export default function AdminLayout({ children }) {
                     {children}
                 </div>
             </main>
+            <AdminFooter />
         </>
     );
 }

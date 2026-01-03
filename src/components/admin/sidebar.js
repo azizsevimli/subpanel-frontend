@@ -12,6 +12,7 @@ export default function AdminSidebar({ className = "" }) {
         { id: 1, name: "Platforms", href: "/admin/platforms" },
         { id: 2, name: "Users", href: "/admin/users" },
         { id: 3, name: "Admins", href: "/admin/admins" },
+        { id: 4, name: "Settings", href: "/admin/settings" },
     ];
 
     return (

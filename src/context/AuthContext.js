@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import api from "@/lib/api";
+import api, { setAuthToken, initAuthTokenFromStorage, clearAuthToken } from "@/lib/api";
+
 
 const AuthContext = createContext(null);
 
@@ -14,19 +15,11 @@ export function AuthProvider({ children }) {
     const [initialLoading, setInitialLoading] = useState(true);
 
     useEffect(() => {
-        if (token) {
-            api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-        } else {
-            delete api.defaults.headers.common["Authorization"];
-        }
-    }, [token]);
-
-    useEffect(() => {
         async function initAuth() {
             try {
                 if (typeof window === "undefined") return;
 
-                const storedToken = localStorage.getItem("auth_token");
+                const storedToken = initAuthTokenFromStorage();
                 if (!storedToken) {
                     setInitialLoading(false);
                     return;
@@ -78,9 +71,7 @@ export function AuthProvider({ children }) {
         const res = await api.post("/auth/login", { email, password });
 
         if (res.data?.token) {
-            if (typeof window !== "undefined") {
-                localStorage.setItem("auth_token", res.data.token);
-            }
+            setAuthToken(res.data.token);
             setToken(res.data.token);
         }
 
@@ -115,9 +106,7 @@ export function AuthProvider({ children }) {
         } catch (err) {
             console.error("Logout error:", err);
         } finally {
-            if (typeof window !== "undefined") {
-                localStorage.removeItem("auth_token");
-            }
+            clearAuthToken();
             setUser(null);
             setToken(null);
             router.replace("/login");

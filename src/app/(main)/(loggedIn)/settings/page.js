@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/lib/api";
@@ -22,7 +22,10 @@ export default function SettingsPage() {
         name: "",
         surname: "",
         email: "",
+        currentPassword: "", // ✅ email değişimi için
     });
+
+    const [originalEmail, setOriginalEmail] = useState(""); // ✅ email değişti mi kontrolü
 
     const [pw, setPw] = useState({
         currentPassword: "",
@@ -32,6 +35,12 @@ export default function SettingsPage() {
 
     const [savingProfile, setSavingProfile] = useState(false);
     const [savingPw, setSavingPw] = useState(false);
+
+    const emailChanged = useMemo(() => {
+        const now = String(profile.email || "").trim().toLowerCase();
+        const orig = String(originalEmail || "").trim().toLowerCase();
+        return orig && now && now !== orig;
+    }, [profile.email, originalEmail]);
 
     useEffect(() => {
         if (initialLoading) return;
@@ -47,10 +56,14 @@ export default function SettingsPage() {
                 const res = await api.get("/settings/profile");
                 const u = res.data.user;
 
+                const email = u?.email || "";
+                setOriginalEmail(email);
+
                 setProfile({
                     name: u?.name || "",
                     surname: u?.surname || "",
-                    email: u?.email || "",
+                    email,
+                    currentPassword: "",
                 });
             } catch (err) {
                 console.error(err);
@@ -64,32 +77,55 @@ export default function SettingsPage() {
     }, [initialLoading, isAuthenticated, router]);
 
     function setProfileField(field) {
-        return (e) => setProfile((p) => ({ ...p, [field]: e.target.value }));
+        return (e) => {
+            setSuccess("");
+            setError("");
+            setProfile((p) => ({ ...p, [field]: e.target.value }));
+        };
     }
 
     function setPwField(field) {
-        return (e) => setPw((p) => ({ ...p, [field]: e.target.value }));
+        return (e) => {
+            setSuccess("");
+            setError("");
+            setPw((p) => ({ ...p, [field]: e.target.value }));
+        };
     }
 
     async function saveProfile() {
+        // ✅ Email değiştiyse currentPassword zorunlu
+        if (emailChanged && !profile.currentPassword) {
+            setError("Email değiştirmek için mevcut şifre zorunludur.");
+            return;
+        }
+
         try {
             setSavingProfile(true);
             setError("");
             setSuccess("");
 
+            // ✅ Payload: email değişmediyse email göndermeye gerek yok
             const payload = {
                 name: profile.name,
                 surname: profile.surname,
-                email: profile.email,
             };
 
-            const res = await api.patch("/settings/profile", payload);
+            if (emailChanged) {
+                payload.email = profile.email;
+                payload.currentPassword = profile.currentPassword;
+            }
 
+            const res = await api.patch("/settings/profile", payload);
             const u = res.data.user;
+
+            const updatedEmail = u?.email || "";
+            setOriginalEmail(updatedEmail);
+
             setProfile({
                 name: u?.name || "",
                 surname: u?.surname || "",
-                email: u?.email || "",
+                email: updatedEmail,
+                currentPassword: "",
             });
 
             setSuccess("Profil güncellendi.");
@@ -187,6 +223,20 @@ export default function SettingsPage() {
                         value={profile.email}
                         onChange={setProfileField("email")}
                     />
+
+                    {/* ✅ Email değiştiyse şifre iste */}
+                    {emailChanged && (
+                        <div className="space-y-2">
+                            <p className="text-xs text-silver">
+                                Güvenlik için email değiştirmeden önce mevcut şifreni doğrulamalısın.
+                            </p>
+                            <PasswordInput
+                                placeholder="current password (required for email change)"
+                                value={profile.currentPassword}
+                                onChange={setProfileField("currentPassword")}
+                            />
+                        </div>
+                    )}
 
                     <div className="flex justify-end">
                         <BorderButton
