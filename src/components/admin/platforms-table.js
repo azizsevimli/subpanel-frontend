@@ -13,93 +13,108 @@ export default function PlatformsTable({ platforms, onDelete, onEdit }) {
                         <th className="text-left px-4 py-3">Name</th>
                         <th className="text-left px-4 py-3">Slug</th>
                         <th className="text-left px-4 py-3">Status</th>
+                        <th className="text-left px-4 py-3">Plans</th>
                         <th className="text-left px-4 py-3">Website</th>
                         <th className="text-left px-4 py-3">Actions</th>
                     </tr>
                 </thead>
+
                 <tbody>
-                    {platforms.map((p) => (
-                        <tr
-                            key={p.id}
-                            className="border-t border-jet hover:bg-jet/60 transition"
-                        >
-                            <td className="px-4 py-2">
-                                <div className="flex items-center gap-3">
-                                    {p.logoUrl ? (
-                                        <Image
-                                            src={toAbsoluteUrl(p.logoUrl)}
-                                            alt={p.name}
-                                            width={32}
-                                            height={32}
-                                            className="rounded-lg border border-jet object-cover"
-                                        />
-                                    ) : (
-                                        <div className="w-8 h-8 rounded-lg border border-jet" />
-                                    )}
+                    {platforms.map((p) => {
+                        const plansCount =
+                            typeof p?.plansCount === "number"
+                                ? p.plansCount
+                                : Array.isArray(p?.plans)
+                                    ? p.plans.length
+                                    : 0;
 
-                                    <div className="flex flex-col">
-                                        <span className="font-medium">{p.name}</span>
-                                        {p.description ? (
-                                            <span className="text-xs text-silver truncate max-w-[320px]">
-                                                {p.description}
-                                            </span>
-                                        ) : null}
+                        return (
+                            <tr
+                                key={p.id}
+                                className="border-t border-jet hover:bg-jet/60 transition"
+                            >
+                                <td className="px-4 py-2">
+                                    <div className="flex items-center gap-3">
+                                        {p.logoUrl ? (
+                                            <Image
+                                                src={toAbsoluteUrl(p.logoUrl)}
+                                                alt={p.name}
+                                                width={32}
+                                                height={32}
+                                                className="rounded-lg border border-jet object-cover"
+                                            />
+                                        ) : (
+                                            <div className="w-8 h-8 rounded-lg border border-jet" />
+                                        )}
+
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="font-medium">{p.name}</span>
+                                            {p.description ? (
+                                                <span className="text-xs text-silver truncate max-w-[320px]">
+                                                    {p.description}
+                                                </span>
+                                            ) : null}
+                                        </div>
                                     </div>
-                                </div>
-                            </td>
+                                </td>
 
-                            <td className="px-4 py-2 text-silver">{p.slug}</td>
+                                <td className="px-4 py-2 text-silver">{p.slug}</td>
 
-                            <td className="px-4 py-2">
-                                <span
-                                    className={
-                                        p.status === "ACTIVE"
-                                            ? "px-2 py-1 rounded-full bg-info/20 text-info text-xs"
-                                            : "px-2 py-1 rounded-full bg-jet text-silver text-xs"
-                                    }
-                                >
-                                    {p.status}
-                                </span>
-                            </td>
-
-                            <td className="px-4 py-2">
-                                {p.websiteUrl ? (
-                                    <a
-                                        href={p.websiteUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-1 underline text-info"
+                                <td className="px-4 py-2">
+                                    <span
+                                        className={
+                                            p.status === "ACTIVE"
+                                                ? "px-2 py-1 rounded-full bg-info/20 text-info text-xs"
+                                                : "px-2 py-1 rounded-full bg-jet text-silver text-xs"
+                                        }
                                     >
-                                        Visit <ExternalLink size={14} />
-                                    </a>
-                                ) : (
-                                    <span className="text-silver">-</span>
-                                )}
-                            </td>
+                                        {p.status}
+                                    </span>
+                                </td>
 
-                            <td className="px-4 py-2">
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => onEdit?.(p.id)}
-                                        className="px-3 py-2 rounded-full border border-jet hover:bg-jet transition"
-                                        aria-label={`Edit ${p.name}`}
-                                    >
-                                        <Pencil size={16} />
-                                    </button>
+                                <td className="px-4 py-2">
+                                    <span className="text-silver">{plansCount}</span>
+                                </td>
 
-                                    <button
-                                        type="button"
-                                        onClick={() => onDelete?.(p.id)}
-                                        className="px-3 py-2 rounded-full border border-jet hover:bg-jet transition text-wrong"
-                                        aria-label={`Delete ${p.name}`}
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                    ))}
+                                <td className="px-4 py-2">
+                                    {p.websiteUrl ? (
+                                        <a
+                                            href={p.websiteUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="inline-flex items-center gap-1 underline text-info"
+                                        >
+                                            Visit <ExternalLink size={14} />
+                                        </a>
+                                    ) : (
+                                        <span className="text-silver">-</span>
+                                    )}
+                                </td>
+
+                                <td className="px-4 py-2">
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => onEdit?.(p.id)}
+                                            className="px-3 py-2 rounded-full border border-jet hover:bg-jet transition"
+                                            aria-label={`Edit ${p.name}`}
+                                        >
+                                            <Pencil size={16} />
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => onDelete?.(p.id)}
+                                            className="px-3 py-2 rounded-full border border-jet hover:bg-jet transition text-wrong"
+                                            aria-label={`Delete ${p.name}`}
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        );
+                    })}
                 </tbody>
             </table>
         </div>

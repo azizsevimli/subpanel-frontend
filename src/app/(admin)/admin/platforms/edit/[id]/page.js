@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
 import api from "@/lib/api";
@@ -35,6 +35,13 @@ function makeField() {
     };
 }
 
+function makePlan() {
+    return {
+        name: "",
+        isActive: false, // default false
+    };
+}
+
 function isOptionType(type) {
     return type === "SELECT" || type === "MULTISELECT";
 }
@@ -46,6 +53,10 @@ function normalizeKey(input) {
         .replace(/[^a-z0-9_ ]/g, "")
         .replace(/\s+/g, "_")
         .replace(/_+/g, "_");
+}
+
+function normalizePlanName(input) {
+    return String(input || "").trim();
 }
 
 export default function EditPlatformPage() {
@@ -60,7 +71,12 @@ export default function EditPlatformPage() {
     const [error, setError] = useState("");
 
     const [platform, setPlatform] = useState(PLATFORM_DEFAULT);
-    const [fields, setFields] = useState([makeField()]);
+
+    // ✅ Fields artık opsiyonel
+    const [fields, setFields] = useState([]);
+
+    // ✅ Plans
+    const [plans, setPlans] = useState([]);
 
     const inputRef = useRef(null);
     const [fileName, setFileName] = useState("");
@@ -94,6 +110,9 @@ export default function EditPlatformPage() {
         if (inputRef.current) inputRef.current.value = "";
     }
 
+    // ----------------------------
+    // Fields (optional)
+    // ----------------------------
     function addField() {
         setFields((prev) => [...prev, makeField()]);
     }
@@ -130,38 +149,89 @@ export default function EditPlatformPage() {
         );
     }
 
+    // ----------------------------
+    // Plans
+    // ----------------------------
+    function addPlan() {
+        setPlans((prev) => [...prev, makePlan()]);
+    }
+
+    function removePlan(index) {
+        setPlans((prev) => prev.filter((_, i) => i !== index));
+    }
+
+    function updatePlan(index, patch) {
+        setPlans((prev) => prev.map((p, i) => (i === index ? { ...p, ...patch } : p)));
+    }
+
     function validate() {
         if (!platform.name.trim()) return "Platform name zorunludur.";
 
+        // ✅ Plans validation (opsiyonel)
+        const cleanedPlans = plans
+            .map((p) => ({
+                name: normalizePlanName(p?.name),
+                isActive: !!p?.isActive,
+            }))
+            .filter((p) => p.name);
+
+        const planNameSet = new Set();
+        for (let i = 0; i < cleanedPlans.length; i++) {
+            const row = i + 1;
+            const key = cleanedPlans[i].name.toLowerCase();
+            if (planNameSet.has(key)) return `Plan #${row}: plan adı benzersiz olmalıdır.`;
+            planNameSet.add(key);
+        }
+
+        // ✅ Fields validation (opsiyonel)
+        const cleanedFields = fields
+            .map((f) => ({
+                ...f,
+                key: normalizeKey(f?.key),
+                label: String(f?.label || "").trim(),
+                type: String(f?.type || "").trim(),
+                required: !!f?.required,
+                options: Array.isArray(f?.options) ? f.options : [],
+            }))
+            .filter((f) => {
+                const hasAny =
+                    !!f.key || !!f.label || !!f.type || (Array.isArray(f.options) && f.options.length > 0) || f.required;
+                return hasAny;
+            });
+
         const keys = new Set();
-        for (let i = 0; i < fields.length; i++) {
-            const f = fields[i];
+        for (let i = 0; i < cleanedFields.length; i++) {
+            const f = cleanedFields[i];
             const row = i + 1;
 
-            const key = normalizeKey(f.key);
-            if (!key) return `Field #${row}: key zorunludur.`;
-            if (keys.has(key)) return `Field #${row}: key benzersiz olmalıdır.`;
-            keys.add(key);
+            if (!f.key) return `Field #${row}: key zorunludur.`;
+            if (keys.has(f.key)) return `Field #${row}: key benzersiz olmalıdır.`;
+            keys.add(f.key);
 
-            if (!String(f.label || "").trim()) return `Field #${row}: label zorunludur.`;
-            if (!String(f.type || "").trim()) return `Field #${row}: type zorunludur.`;
+            if (!f.label) return `Field #${row}: label zorunludur.`;
+            if (!f.type) return `Field #${row}: type zorunludur.`;
 
             if (isOptionType(f.type)) {
                 if (!f.options || f.options.length === 0) {
                     return `Field #${row}: seçenek (option) eklemelisin.`;
                 }
+
                 const values = new Set();
                 for (let j = 0; j < f.options.length; j++) {
                     const opt = f.options[j];
                     const optRow = j + 1;
 
-                    if (!String(opt.label || "").trim()) return `Field #${row} Option #${optRow}: label zorunludur.`;
-                    if (!String(opt.value || "").trim()) return `Field #${row} Option #${optRow}: value zorunludur.`;
-                    if (values.has(opt.value.trim())) return `Field #${row}: option value benzersiz olmalıdır.`;
-                    values.add(opt.value.trim());
+                    const optLabel = String(opt?.label || "").trim();
+                    const optValue = String(opt?.value || "").trim();
+
+                    if (!optLabel) return `Field #${row} Option #${optRow}: label zorunludur.`;
+                    if (!optValue) return `Field #${row} Option #${optRow}: value zorunludur.`;
+                    if (values.has(optValue)) return `Field #${row}: option value benzersiz olmalıdır.`;
+                    values.add(optValue);
                 }
             }
         }
+
         return "";
     }
 
@@ -198,8 +268,15 @@ export default function EditPlatformPage() {
                     logoFile: null,
                 });
 
-                // optionsJson -> options
-                const mapped = (p.fields || []).map((f) => ({
+                // ✅ Plans
+                const mappedPlans = (p.plans || []).map((pl) => ({
+                    name: pl?.name || "",
+                    isActive: !!pl?.isActive,
+                }));
+                setPlans(mappedPlans);
+
+                // ✅ Fields: optionsJson -> options (opsiyonel)
+                const mappedFields = (p.fields || []).map((f) => ({
                     key: f.key || "",
                     label: f.label || "",
                     type: f.type || "TEXT",
@@ -207,7 +284,7 @@ export default function EditPlatformPage() {
                     options: Array.isArray(f.optionsJson) ? f.optionsJson : [],
                 }));
 
-                setFields(mapped.length > 0 ? mapped : [makeField()]);
+                setFields(mappedFields); // boş olabilir
             } catch (err) {
                 console.error(err);
                 setError(err?.response?.data?.message || "Platform verisi alınırken hata oluştu.");
@@ -247,11 +324,35 @@ export default function EditPlatformPage() {
                 logoUrl: logoUrl || undefined,
             };
 
-            const fieldsPayload = fields.map((f, idx) => {
-                const key = normalizeKey(f.key);
+            // ✅ Plans payload (boş adları gönderme)
+            const plansPayload = plans
+                .map((p, idx) => ({
+                    name: normalizePlanName(p?.name),
+                    isActive: !!p?.isActive,
+                    order: idx + 1,
+                }))
+                .filter((p) => p.name);
+
+            // ✅ Fields payload (boş/yarım satırları gönderme)
+            const cleanedFields = fields
+                .map((f) => ({
+                    ...f,
+                    key: normalizeKey(f?.key),
+                    label: String(f?.label || "").trim(),
+                    type: String(f?.type || "").trim(),
+                    required: !!f?.required,
+                    options: Array.isArray(f?.options) ? f.options : [],
+                }))
+                .filter((f) => {
+                    const hasAny =
+                        !!f.key || !!f.label || !!f.type || (Array.isArray(f.options) && f.options.length > 0) || f.required;
+                    return hasAny;
+                });
+
+            const fieldsPayload = cleanedFields.map((f, idx) => {
                 const base = {
-                    key,
-                    label: String(f.label || "").trim(),
+                    key: f.key,
+                    label: f.label,
                     type: f.type,
                     required: !!f.required,
                     order: idx + 1,
@@ -272,7 +373,8 @@ export default function EditPlatformPage() {
 
             await api.patch(`/admin/platforms/${platformId}`, {
                 platform: platformPayload,
-                fields: fieldsPayload,
+                plans: plansPayload,     // ✅ new
+                fields: fieldsPayload,   // ✅ optional
             });
 
             router.replace("/admin/platforms");
@@ -305,10 +407,7 @@ export default function EditPlatformPage() {
                         Back to Platforms
                     </Link>
 
-                    <BorderButton
-                        text={submitting ? "Saving..." : "Save Changes"}
-                        disabled={submitting}
-                    />
+                    <BorderButton text={submitting ? "Saving..." : "Save Changes"} disabled={submitting} />
                 </div>
 
                 {error && (
@@ -328,6 +427,74 @@ export default function EditPlatformPage() {
                     onRemoveLogo={onRemoveLogo}
                 />
 
+                {/* ✅ Plans Section */}
+                <section className="rounded-3xl border border-jet p-6 space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <h2 className="text-lg font-semibold">Plans</h2>
+                            <p className="text-sm text-silver">
+                                Bu platform için plan seçenekleri (opsiyonel). Plan eklenirse kullanıcı abonelikte plan seçmek zorunda olabilir.
+                            </p>
+                        </div>
+
+                        <BorderButton
+                            type="button"
+                            text="Add Plan"
+                            icon={<Plus size={16} strokeWidth={3} />}
+                            onClick={addPlan}
+                        />
+                    </div>
+
+                    {plans.length === 0 ? (
+                        <p className="text-sm text-silver border border-jet rounded-xl px-4 py-6 text-center">
+                            Henüz plan yok. İstersen plan ekleyebilirsin.
+                        </p>
+                    ) : (
+                        <div className="space-y-3">
+                            {plans.map((p, idx) => (
+                                <div key={idx} className="rounded-2xl border border-jet p-4 space-y-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <p className="text-sm text-silver">Plan #{idx + 1}</p>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => removePlan(idx)}
+                                            className="px-3 py-2 rounded-full border border-jet hover:bg-jet transition text-wrong"
+                                            title="Remove plan"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+                                        <input
+                                            value={p.name}
+                                            onChange={(e) => updatePlan(idx, { name: e.target.value })}
+                                            placeholder="Plan name (e.g. Premium)"
+                                            className="w-full px-4 py-2 rounded-full border border-jet bg-night text-sm outline-none md:col-span-2"
+                                        />
+
+                                        <label className="inline-flex items-center gap-2 text-sm text-silver">
+                                            <input
+                                                type="checkbox"
+                                                checked={!!p.isActive}
+                                                onChange={(e) => updatePlan(idx, { isActive: e.target.checked })}
+                                                className="accent-info"
+                                            />
+                                            Active
+                                        </label>
+                                    </div>
+
+                                    <p className="text-xs text-silver">
+                                        Not: Varsayılan olarak Active kapalıdır. Hazır olduğunda aktif edebilirsin.
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </section>
+
+                {/* Fields (optional) */}
                 <PlatformFieldsBuilder
                     fields={fields}
                     normalizeKey={normalizeKey}
@@ -340,10 +507,7 @@ export default function EditPlatformPage() {
                 />
 
                 <div className="flex justify-end">
-                    <BorderButton
-                        text={submitting ? "Saving..." : "Save Changes"}
-                        disabled={submitting}
-                    />
+                    <BorderButton text={submitting ? "Saving..." : "Save Changes"} disabled={submitting} />
                 </div>
             </form>
         </main>

@@ -19,25 +19,30 @@ export default function AddSubscriptionPage() {
     const { initialLoading, isAuthenticated } = useAuth();
 
     const [selectedPlatformId, setSelectedPlatformId] = useState("");
-    const [fieldValues, setFieldValues] = useState({}); // { [platformFieldId]: value }
+    const [fieldValues, setFieldValues] = useState({});
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
 
-    // ✅ Yeni sistem: billingDay yok, repeat var
     const [tracking, setTracking] = useState({
         status: "ACTIVE",
         startDate: "",
         endDate: "",
-        repeatUnit: "MONTH",      // "MONTH" | "YEAR"
-        repeatInterval: "1",      // string tutup payload'da number'a çevireceğiz
+        repeatUnit: "MONTH",     // WEEK | MONTH | YEAR
+        repeatInterval: "1",
         amount: "",
         currency: "TRY",
+
+        // ✅ yeni standart alanlar
+        planId: "",
+        accountEmail: "",
+        accountPhone: "",
+        notes: "",
     });
 
     const enabled = !initialLoading && isAuthenticated;
 
     const { platforms, loadingPlatforms, error: platformsError } = usePlatforms({ enabled });
-    const { fields, loadingFields, error: fieldsError } = usePlatformFields({
+    const { plans, fields, loadingFields, error: fieldsError } = usePlatformFields({
         platformId: selectedPlatformId,
         enabled,
     });
@@ -46,15 +51,19 @@ export default function AddSubscriptionPage() {
         return platforms.find((p) => p.id === selectedPlatformId) || null;
     }, [platforms, selectedPlatformId]);
 
+    const hasActivePlans = Array.isArray(plans) && plans.length > 0;
+
     useEffect(() => {
         if (initialLoading) return;
         if (!isAuthenticated) router.replace("/login");
     }, [initialLoading, isAuthenticated, router]);
 
-    // Platform değişince fieldValues resetle (eski platform değerleri karışmasın)
     useEffect(() => {
         setFieldValues({});
         setError("");
+
+        // platform değişince plan seçimini temizle
+        setTracking((p) => ({ ...p, planId: "" }));
     }, [selectedPlatformId]);
 
     useEffect(() => {
@@ -73,25 +82,23 @@ export default function AddSubscriptionPage() {
         if (!selectedPlatformId) return "Lütfen bir platform seç.";
         if (!tracking.startDate) return "Start Date zorunludur.";
 
-        // repeatInterval kontrolü
+        if (hasActivePlans && !tracking.planId) {
+            return "Bu platformda plan seçimi zorunludur.";
+        }
+
         const interval = Number(tracking.repeatInterval);
         if (!Number.isInteger(interval) || interval < 1) {
             return "Repeat interval en az 1 olmalıdır.";
         }
 
-        // required alan kontrolü (UI tarafında hızlı kontrol)
         for (const f of fields) {
             if (!f.required) continue;
             const v = fieldValues[f.id];
             const empty =
-                v === undefined ||
-                v === null ||
-                v === "" ||
-                (Array.isArray(v) && v.length === 0);
+                v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
             if (empty) return `Zorunlu alan: ${f.label}`;
         }
 
-        // EndDate opsiyonel ama startDate'ten küçükse uyaralım
         if (tracking.endDate) {
             const s = new Date(tracking.startDate);
             const e = new Date(tracking.endDate);
@@ -116,16 +123,23 @@ export default function AddSubscriptionPage() {
 
             const payload = {
                 platformId: selectedPlatformId,
+
                 status: tracking.status,
-                startDate: tracking.startDate, // ✅ zorunlu
+                startDate: tracking.startDate,
                 endDate: tracking.endDate || null,
 
-                // ✅ yeni tekrar sistemi
-                repeatUnit: tracking.repeatUnit, // "MONTH" | "YEAR"
+                repeatUnit: tracking.repeatUnit, // WEEK | MONTH | YEAR
                 repeatInterval: Number(tracking.repeatInterval || 1),
 
-                amount: tracking.amount ? Number(tracking.amount) : null,
+                // ✅ Decimal güvenliği: string gönder
+                amount: tracking.amount ? String(tracking.amount) : null,
                 currency: tracking.currency ? String(tracking.currency).toUpperCase() : null,
+
+                // ✅ yeni standart alanlar
+                planId: tracking.planId ? String(tracking.planId) : null,
+                accountEmail: tracking.accountEmail ? String(tracking.accountEmail) : null,
+                accountPhone: tracking.accountPhone ? String(tracking.accountPhone) : null,
+                notes: tracking.notes ? String(tracking.notes) : null,
 
                 values: fields.map((f) => ({
                     platformFieldId: f.id,
@@ -134,7 +148,6 @@ export default function AddSubscriptionPage() {
             };
 
             await api.post("/subscriptions", payload);
-
             router.replace("/my-subscriptions");
         } catch (err) {
             console.error(err);
@@ -169,9 +182,7 @@ export default function AddSubscriptionPage() {
                 </div>
 
                 {error && (
-                    <p className="text-sm text-wrong border border-wrong/40 rounded-xl px-4 py-2">
-                        {error}
-                    </p>
+                    <p className="text-sm text-wrong border border-wrong/40 rounded-xl px-4 py-2">{error}</p>
                 )}
 
                 <PlatformSelectSection
@@ -181,9 +192,31 @@ export default function AddSubscriptionPage() {
                     selectedPlatform={selectedPlatform}
                 />
 
-                {/* ✅ Subscription Details */}
                 <section className="rounded-3xl border border-jet p-6 space-y-4">
                     <h2 className="text-lg font-semibold">Subscription Details</h2>
+
+                    {/* ✅ Plan select (aktif plan varsa zorunlu) */}
+                    {selectedPlatformId ? (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                            <label className="text-sm text-silver">
+                                Plan {hasActivePlans ? <span className="text-wrong">*</span> : null}
+                            </label>
+
+                            <select
+                                value={tracking.planId}
+                                onChange={(e) => setTrackingField("planId")(e.target.value)}
+                                className="w-full md:col-span-2 px-4 py-2 rounded-full border border-jet bg-night text-sm"
+                                disabled={!hasActivePlans}
+                            >
+                                <option value="">{hasActivePlans ? "Select a plan..." : "No active plan"}</option>
+                                {plans.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                        {p.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    ) : null}
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
                         <label className="text-sm text-silver">Status</label>
@@ -222,7 +255,7 @@ export default function AddSubscriptionPage() {
                         </div>
                     </div>
 
-                    {/* ✅ Repeat settings */}
+                    {/* ✅ Repeat */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="space-y-2">
                             <p className="text-sm text-silver">Repeat Unit</p>
@@ -231,6 +264,7 @@ export default function AddSubscriptionPage() {
                                 onChange={(e) => setTrackingField("repeatUnit")(e.target.value)}
                                 className="w-full px-4 py-2 rounded-full border border-jet bg-night text-sm"
                             >
+                                <option value="WEEK">WEEK</option>
                                 <option value="MONTH">MONTH</option>
                                 <option value="YEAR">YEAR</option>
                             </select>
@@ -247,7 +281,7 @@ export default function AddSubscriptionPage() {
                                 placeholder="1"
                                 className="w-full h-[35px] px-3 rounded-[15px] border border-jet outline-none bg-smoke text-sm text-night"
                             />
-                            <p className="text-xs text-silver">1 = every month/year</p>
+                            <p className="text-xs text-silver">1 = every unit</p>
                         </div>
 
                         <div className="space-y-2">
@@ -280,6 +314,41 @@ export default function AddSubscriptionPage() {
                         <div className="md:col-span-2 rounded-2xl border border-jet px-4 py-3 text-sm text-silver">
                             <span className="text-smoke font-medium">Rule:</span>{" "}
                             Renewal date = Start Date + (Repeat Unit × Interval). Period ends one day before renewal.
+                        </div>
+                    </div>
+
+                    {/* ✅ Account / Notes */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                            <p className="text-sm text-silver">Account Email</p>
+                            <input
+                                type="email"
+                                value={tracking.accountEmail}
+                                onChange={(e) => setTrackingField("accountEmail")(e.target.value)}
+                                placeholder="email@example.com"
+                                className="w-full h-[35px] px-3 rounded-[15px] border border-jet outline-none bg-smoke text-sm text-night"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <p className="text-sm text-silver">Account Phone</p>
+                            <input
+                                type="text"
+                                value={tracking.accountPhone}
+                                onChange={(e) => setTrackingField("accountPhone")(e.target.value)}
+                                placeholder="+90..."
+                                className="w-full h-[35px] px-3 rounded-[15px] border border-jet outline-none bg-smoke text-sm text-night"
+                            />
+                        </div>
+
+                        <div className="space-y-2 md:col-span-3">
+                            <p className="text-sm text-silver">Notes</p>
+                            <textarea
+                                value={tracking.notes}
+                                onChange={(e) => setTrackingField("notes")(e.target.value)}
+                                placeholder="Optional notes..."
+                                className="w-full min-h-[90px] px-3 py-2 rounded-[15px] border border-jet outline-none bg-smoke text-sm text-night"
+                            />
                         </div>
                     </div>
                 </section>

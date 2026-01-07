@@ -25,6 +25,7 @@ function startOfWeekMonday(d) {
 function addDays(d, n) {
     const x = new Date(d);
     x.setDate(x.getDate() + n);
+    x.setHours(0, 0, 0, 0);
     return x;
 }
 
@@ -33,12 +34,18 @@ function sameYmd(a, b) {
 }
 
 function fmtDayLabel(d) {
-    // Kısa ve net
     return d.toLocaleDateString(undefined, { weekday: "short" }); // Mon, Tue...
 }
 
 function fmtDateLabel(d) {
     return d.toLocaleDateString(undefined, { day: "2-digit", month: "short" }); // 03 Jan
+}
+
+function formatAmount(amount, currency) {
+    if (amount == null) return "";
+    const n = Number(amount); // backend string/decimal gelebilir
+    if (!Number.isFinite(n)) return "";
+    return `${n.toFixed(2)} ${currency || ""}`.trim();
 }
 
 export default function WeeklyPaymentsCalendar() {
@@ -59,22 +66,35 @@ export default function WeeklyPaymentsCalendar() {
     }, [weekDays]);
 
     useEffect(() => {
+        let mounted = true;
+
         async function fetchWeek() {
             try {
                 setLoading(true);
                 setError("");
+
                 const res = await api.get(`/calendar/events?from=${range.from}&to=${range.to}`);
-                setItems(Array.isArray(res.data?.items) ? res.data.items : []);
+
+                // ✅ Bu haftada sadece "ödeme günü" = RENEWAL gösterelim
+                const raw = Array.isArray(res.data?.items) ? res.data.items : [];
+                const renewalsOnly = raw.filter((e) => String(e?.type || "").toUpperCase() === "RENEWAL");
+
+                if (!mounted) return;
+                setItems(renewalsOnly);
             } catch (err) {
                 console.error(err);
-                setError(err?.response?.data?.message || "Bu haftanın takvim kayıtları alınamadı.");
+                if (!mounted) return;
+                setError(err?.response?.data?.message || "Bu haftanın ödeme kayıtları alınamadı.");
                 setItems([]);
             } finally {
-                setLoading(false);
+                if (mounted) setLoading(false);
             }
         }
 
         fetchWeek();
+        return () => {
+            mounted = false;
+        };
     }, [range.from, range.to]);
 
     const byDay = useMemo(() => {
@@ -88,9 +108,10 @@ export default function WeeklyPaymentsCalendar() {
             map.get(key).push(e);
         }
 
-        // gün içi sıralama: aynı günse stable kalsın; istersen title’a göre sort edebilirsin
         return map;
     }, [items, weekDays]);
+
+    const totalThisWeek = useMemo(() => items.length, [items]);
 
     return (
         <section className="rounded-3xl border border-jet p-6 space-y-4">
@@ -98,7 +119,7 @@ export default function WeeklyPaymentsCalendar() {
                 <div>
                     <h2 className="text-lg font-semibold">This Week</h2>
                     <p className="text-sm text-silver">
-                        Payments / renewals for {range.from} → {range.to}
+                        Payments / renewals for {range.from} → {range.to} • Total: {totalThisWeek}
                     </p>
                 </div>
             </div>
@@ -114,7 +135,7 @@ export default function WeeklyPaymentsCalendar() {
                     {weekDays.map((d) => {
                         const key = ymdLocal(d);
                         const dayItems = byDay.get(key) || [];
-                        const isToday = sameYmd(d, new Date());
+                        const isToday = sameYmd(d, today);
 
                         return (
                             <div
@@ -134,10 +155,7 @@ export default function WeeklyPaymentsCalendar() {
                                 ) : (
                                     <div className="space-y-2">
                                         {dayItems.map((e) => {
-                                            const amountText =
-                                                e?.amount != null && Number.isFinite(Number(e.amount))
-                                                    ? `${Number(e.amount).toFixed(2)} ${e.currency || ""}`.trim()
-                                                    : "";
+                                            const amountText = formatAmount(e?.amount, e?.currency);
 
                                             return (
                                                 <button
@@ -150,11 +168,10 @@ export default function WeeklyPaymentsCalendar() {
                                                     title="Open subscription"
                                                 >
                                                     <p className="text-sm font-medium truncate">
-                                                        {e.title || "Payment"}
+                                                        {e?.platform?.name ? `${e.platform.name} • Payment` : (e.title || "Payment")}
                                                     </p>
                                                     <p className="text-xs text-silver truncate">
-                                                        {e.type || "RENEWAL"}
-                                                        {amountText ? ` • ${amountText}` : ""}
+                                                        {amountText ? amountText : "Amount not set"}
                                                     </p>
                                                 </button>
                                             );

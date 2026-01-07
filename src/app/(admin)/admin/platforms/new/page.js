@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
 import api from "@/lib/api";
@@ -35,6 +35,14 @@ function makeField() {
     };
 }
 
+function makePlan() {
+    return {
+        name: "",
+        // Kullanıcı isteği: default isActive = false
+        isActive: false,
+    };
+}
+
 function isOptionType(type) {
     return type === "SELECT" || type === "MULTISELECT";
 }
@@ -48,12 +56,22 @@ function normalizeKey(input) {
         .replace(/_+/g, "_");
 }
 
+function normalizePlanName(input) {
+    return String(input || "").trim();
+}
+
 export default function NewPlatformPage() {
     const router = useRouter();
     const { loading: authLoading } = useRequireAdmin();
 
     const [platform, setPlatform] = useState(PLATFORM_DEFAULT);
-    const [fields, setFields] = useState([makeField()]);
+
+    // ✅ Fields artık opsiyonel
+    const [fields, setFields] = useState([]); // başlangıçta boş
+
+    // ✅ Plans
+    const [plans, setPlans] = useState([]); // başlangıçta boş
+
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState("");
 
@@ -89,6 +107,9 @@ export default function NewPlatformPage() {
         if (inputRef.current) inputRef.current.value = "";
     }
 
+    // ----------------------------
+    // Fields (optional)
+    // ----------------------------
     function addField() {
         setFields((prev) => [...prev, makeField()]);
     }
@@ -129,22 +150,72 @@ export default function NewPlatformPage() {
         );
     }
 
+    // ----------------------------
+    // Plans
+    // ----------------------------
+    function addPlan() {
+        setPlans((prev) => [...prev, makePlan()]);
+    }
+
+    function removePlan(index) {
+        setPlans((prev) => prev.filter((_, i) => i !== index));
+    }
+
+    function updatePlan(index, patch) {
+        setPlans((prev) => prev.map((p, i) => (i === index ? { ...p, ...patch } : p)));
+    }
+
     function validate() {
         if (!platform.name.trim()) return "Platform name zorunludur.";
 
-        const keys = new Set();
+        // ✅ Plans validation (opsiyonel)
+        // boş plan satırlarını yok sayalım, ama doluysa kuralları uygula
+        const cleanedPlans = plans
+            .map((p) => ({
+                name: normalizePlanName(p?.name),
+                isActive: !!p?.isActive,
+            }))
+            .filter((p) => p.name); // boşları çıkar
 
-        for (let i = 0; i < fields.length; i++) {
-            const f = fields[i];
+        const planNameSet = new Set();
+        for (let i = 0; i < cleanedPlans.length; i++) {
+            const row = i + 1;
+            const name = cleanedPlans[i].name;
+            const key = name.toLowerCase();
+
+            if (planNameSet.has(key)) return `Plan #${row}: plan adı benzersiz olmalıdır.`;
+            planNameSet.add(key);
+        }
+
+        // ✅ Fields validation (opsiyonel)
+        // Tamamen boş field satırlarını yok sayalım
+        const cleanedFields = fields
+            .map((f) => ({
+                ...f,
+                key: normalizeKey(f?.key),
+                label: String(f?.label || "").trim(),
+                type: String(f?.type || "").trim(),
+                required: !!f?.required,
+                options: Array.isArray(f?.options) ? f.options : [],
+            }))
+            .filter((f) => {
+                // boş satır => ignore
+                const hasAny =
+                    !!f.key || !!f.label || !!f.type || (Array.isArray(f.options) && f.options.length > 0) || f.required;
+                return hasAny;
+            });
+
+        const keys = new Set();
+        for (let i = 0; i < cleanedFields.length; i++) {
+            const f = cleanedFields[i];
             const row = i + 1;
 
-            const key = normalizeKey(f.key);
-            if (!key) return `Field #${row}: key zorunludur.`;
-            if (keys.has(key)) return `Field #${row}: key benzersiz olmalıdır.`;
-            keys.add(key);
+            if (!f.key) return `Field #${row}: key zorunludur.`;
+            if (keys.has(f.key)) return `Field #${row}: key benzersiz olmalıdır.`;
+            keys.add(f.key);
 
-            if (!String(f.label || "").trim()) return `Field #${row}: label zorunludur.`;
-            if (!String(f.type || "").trim()) return `Field #${row}: type zorunludur.`;
+            if (!f.label) return `Field #${row}: label zorunludur.`;
+            if (!f.type) return `Field #${row}: type zorunludur.`;
 
             if (isOptionType(f.type)) {
                 if (!f.options || f.options.length === 0) {
@@ -156,16 +227,13 @@ export default function NewPlatformPage() {
                     const opt = f.options[j];
                     const optRow = j + 1;
 
-                    if (!String(opt.label || "").trim()) {
-                        return `Field #${row} Option #${optRow}: label zorunludur.`;
-                    }
-                    if (!String(opt.value || "").trim()) {
-                        return `Field #${row} Option #${optRow}: value zorunludur.`;
-                    }
-                    if (values.has(opt.value.trim())) {
-                        return `Field #${row}: option value benzersiz olmalıdır.`;
-                    }
-                    values.add(opt.value.trim());
+                    const optLabel = String(opt?.label || "").trim();
+                    const optValue = String(opt?.value || "").trim();
+
+                    if (!optLabel) return `Field #${row} Option #${optRow}: label zorunludur.`;
+                    if (!optValue) return `Field #${row} Option #${optRow}: value zorunludur.`;
+                    if (values.has(optValue)) return `Field #${row}: option value benzersiz olmalıdır.`;
+                    values.add(optValue);
                 }
             }
         }
@@ -200,11 +268,35 @@ export default function NewPlatformPage() {
                 logoUrl: logoUrl || undefined,
             };
 
-            const fieldsPayload = fields.map((f, idx) => {
-                const key = normalizeKey(f.key);
+            // ✅ Plans payload (boş adları gönderme)
+            const plansPayload = plans
+                .map((p, idx) => ({
+                    name: normalizePlanName(p?.name),
+                    isActive: !!p?.isActive, // default false
+                    order: idx + 1,
+                }))
+                .filter((p) => p.name);
+
+            // ✅ Fields payload (boş satırları gönderme)
+            const cleanedFields = fields
+                .map((f) => ({
+                    ...f,
+                    key: normalizeKey(f?.key),
+                    label: String(f?.label || "").trim(),
+                    type: String(f?.type || "").trim(),
+                    required: !!f?.required,
+                    options: Array.isArray(f?.options) ? f.options : [],
+                }))
+                .filter((f) => {
+                    const hasAny =
+                        !!f.key || !!f.label || !!f.type || (Array.isArray(f.options) && f.options.length > 0) || f.required;
+                    return hasAny;
+                });
+
+            const fieldsPayload = cleanedFields.map((f, idx) => {
                 const base = {
-                    key,
-                    label: String(f.label || "").trim(),
+                    key: f.key,
+                    label: f.label,
                     type: f.type,
                     required: !!f.required,
                     order: idx + 1,
@@ -225,7 +317,8 @@ export default function NewPlatformPage() {
 
             await api.post("/admin/platforms", {
                 platform: platformPayload,
-                fields: fieldsPayload,
+                plans: plansPayload,     // ✅ new
+                fields: fieldsPayload,   // ✅ optional
             });
 
             router.replace("/admin/platforms");
@@ -258,10 +351,7 @@ export default function NewPlatformPage() {
                         Back to Platforms
                     </Link>
 
-                    <BorderButton
-                        text={submitting ? "Creating..." : "Create Platform"}
-                        disabled={submitting}
-                    />
+                    <BorderButton text={submitting ? "Creating..." : "Create Platform"} disabled={submitting} />
                 </div>
 
                 {error && (
@@ -281,6 +371,74 @@ export default function NewPlatformPage() {
                     onRemoveLogo={onRemoveLogo}
                 />
 
+                {/* ✅ Plans Section */}
+                <section className="rounded-3xl border border-jet p-6 space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <h2 className="text-lg font-semibold">Plans</h2>
+                            <p className="text-sm text-silver">
+                                Bu platform için plan seçenekleri (opsiyonel). Plan eklenirse kullanıcı abonelikte plan seçmek zorunda olabilir.
+                            </p>
+                        </div>
+
+                        <BorderButton
+                            type="button"
+                            text="Add Plan"
+                            icon={<Plus size={16} strokeWidth={3} />}
+                            onClick={addPlan}
+                        />
+                    </div>
+
+                    {plans.length === 0 ? (
+                        <p className="text-sm text-silver border border-jet rounded-xl px-4 py-6 text-center">
+                            Henüz plan yok. İstersen plan ekleyebilirsin.
+                        </p>
+                    ) : (
+                        <div className="space-y-3">
+                            {plans.map((p, idx) => (
+                                <div key={idx} className="rounded-2xl border border-jet p-4 space-y-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <p className="text-sm text-silver">Plan #{idx + 1}</p>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => removePlan(idx)}
+                                            className="px-3 py-2 rounded-full border border-jet hover:bg-jet transition text-wrong"
+                                            title="Remove plan"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+                                        <input
+                                            value={p.name}
+                                            onChange={(e) => updatePlan(idx, { name: e.target.value })}
+                                            placeholder="Plan name (e.g. Premium)"
+                                            className="w-full px-4 py-2 rounded-full border border-jet bg-night text-sm outline-none md:col-span-2"
+                                        />
+
+                                        <label className="inline-flex items-center gap-2 text-sm text-silver">
+                                            <input
+                                                type="checkbox"
+                                                checked={!!p.isActive}
+                                                onChange={(e) => updatePlan(idx, { isActive: e.target.checked })}
+                                                className="accent-info"
+                                            />
+                                            Active
+                                        </label>
+                                    </div>
+
+                                    <p className="text-xs text-silver">
+                                        Not: Varsayılan olarak Active kapalıdır. Hazır olduğunda aktif edebilirsin.
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </section>
+
+                {/* Fields (optional) */}
                 <PlatformFieldsBuilder
                     fields={fields}
                     normalizeKey={normalizeKey}
@@ -294,10 +452,7 @@ export default function NewPlatformPage() {
 
                 {/* Footer submit */}
                 <div className="flex justify-end">
-                    <BorderButton
-                        text={submitting ? "Creating..." : "Create Platform"}
-                        disabled={submitting}
-                    />
+                    <BorderButton text={submitting ? "Creating..." : "Create Platform"} disabled={submitting} />
                 </div>
             </form>
         </main>
