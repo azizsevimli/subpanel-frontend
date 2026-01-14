@@ -1,24 +1,42 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
 import api from "@/lib/api";
 
 export function usePlatforms({ enabled }) {
     const [platforms, setPlatforms] = useState([]);
-    const [loadingPlatforms, setLoadingPlatforms] = useState(true);
+    const [loadingPlatforms, setLoadingPlatforms] = useState(false);
     const [error, setError] = useState("");
 
+    const mountedRef = useRef(false);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
+
     const fetchPlatforms = useCallback(async () => {
+        setLoadingPlatforms(true);
+        setError("");
+
         try {
-            setLoadingPlatforms(true);
-            setError("");
             const res = await api.get("/platforms");
-            setPlatforms(res.data.items || []);
+            const items = Array.isArray(res.data?.items) ? res.data.items : [];
+
+            if (!mountedRef.current) return { ok: true };
+            setPlatforms(items);
+            return { ok: true };
         } catch (err) {
             console.error(err);
-            setError(err?.response?.data?.message || "Platformlar alınırken hata oluştu.");
+            const message = err?.response?.data?.message || "Failed to load platforms.";
+
+            if (mountedRef.current) setError(message);
+            return { ok: false, message };
         } finally {
-            setLoadingPlatforms(false);
+            if (mountedRef.current) setLoadingPlatforms(false);
         }
     }, []);
 

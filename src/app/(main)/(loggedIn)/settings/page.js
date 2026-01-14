@@ -1,284 +1,140 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+
 import { useAuth } from "@/context/AuthContext";
-import api from "@/lib/api";
+import { useSettingsProfile } from "@/hooks/useSettingsProfile";
+import { useChangePassword } from "@/hooks/useChangePassword";
 
 import LoadingSpinner from "@/components/loading-spinner";
-import BorderButton from "@/components/buttons/border-button";
-import FormInput from "@/components/inputs/input";
-import PasswordInput from "@/components/inputs/password";
+import SettingsHeader from "@/components/main/settings/settings-header";
+import ProfileSection from "@/components/main/settings/profile-section";
+import PasswordSection from "@/components/main/settings/password-section";
+
+function FullPageSpinner() {
+    return (
+        <main className="flex items-center justify-center h-screen text-smoke">
+            <LoadingSpinner />
+        </main>
+    );
+}
 
 export default function SettingsPage() {
     const router = useRouter();
     const { initialLoading, isAuthenticated } = useAuth();
 
-    const [pageLoading, setPageLoading] = useState(true);
-    const [error, setError] = useState("");
-    const [success, setSuccess] = useState("");
+    const [message, setMessage] = useState({ type: "", text: "" });
+    const clearMessage = useCallback(() => setMessage({ type: "", text: "" }), []);
 
-    const [profile, setProfile] = useState({
-        name: "",
-        surname: "",
-        email: "",
-        currentPassword: "", // ✅ email değişimi için
-    });
+    const {
+        loading: profileLoading,
+        profile,
+        emailChanged,
+        updateField: updateProfileField,
+        fetchProfile,
+        saveProfile,
+    } = useSettingsProfile();
 
-    const [originalEmail, setOriginalEmail] = useState(""); // ✅ email değişti mi kontrolü
-
-    const [pw, setPw] = useState({
-        currentPassword: "",
-        newPassword: "",
-        confirm: "",
-    });
+    const { saving: savingPw, pw, updateField: updatePwField, submit: submitPassword } =
+        useChangePassword();
 
     const [savingProfile, setSavingProfile] = useState(false);
-    const [savingPw, setSavingPw] = useState(false);
-
-    const emailChanged = useMemo(() => {
-        const now = String(profile.email || "").trim().toLowerCase();
-        const orig = String(originalEmail || "").trim().toLowerCase();
-        return orig && now && now !== orig;
-    }, [profile.email, originalEmail]);
 
     useEffect(() => {
         if (initialLoading) return;
+
         if (!isAuthenticated) {
             router.replace("/login");
             return;
         }
 
-        async function fetchProfile() {
-            try {
-                setPageLoading(true);
-                setError("");
-                const res = await api.get("/settings/profile");
-                const u = res.data.user;
+        let alive = true;
 
-                const email = u?.email || "";
-                setOriginalEmail(email);
+        (async () => {
+            clearMessage();
+            const res = await fetchProfile();
+            if (!alive) return;
 
-                setProfile({
-                    name: u?.name || "",
-                    surname: u?.surname || "",
-                    email,
-                    currentPassword: "",
-                });
-            } catch (err) {
-                console.error(err);
-                setError(err?.response?.data?.message || "Profil alınırken hata oluştu.");
-            } finally {
-                setPageLoading(false);
+            if (!res?.ok) {
+                setMessage({ type: "error", text: res?.message || "Failed to load profile." });
             }
-        }
+        })();
 
-        fetchProfile();
-    }, [initialLoading, isAuthenticated, router]);
-
-    function setProfileField(field) {
-        return (e) => {
-            setSuccess("");
-            setError("");
-            setProfile((p) => ({ ...p, [field]: e.target.value }));
+        return () => {
+            alive = false;
         };
-    }
+    }, [initialLoading, isAuthenticated, router, fetchProfile, clearMessage]);
 
-    function setPwField(field) {
-        return (e) => {
-            setSuccess("");
-            setError("");
-            setPw((p) => ({ ...p, [field]: e.target.value }));
-        };
-    }
+    const handleProfileChange = useCallback(
+        (field, value) => {
+            clearMessage();
+            updateProfileField(field, value);
+        },
+        [clearMessage, updateProfileField]
+    );
 
-    async function saveProfile() {
-        // ✅ Email değiştiyse currentPassword zorunlu
-        if (emailChanged && !profile.currentPassword) {
-            setError("Email değiştirmek için mevcut şifre zorunludur.");
-            return;
-        }
+    const handlePwChange = useCallback(
+        (field, value) => {
+            clearMessage();
+            updatePwField(field, value);
+        },
+        [clearMessage, updatePwField]
+    );
 
-        try {
-            setSavingProfile(true);
-            setError("");
-            setSuccess("");
+    const handleSaveProfile = useCallback(async () => {
+        clearMessage();
+        setSavingProfile(true);
 
-            // ✅ Payload: email değişmediyse email göndermeye gerek yok
-            const payload = {
-                name: profile.name,
-                surname: profile.surname,
-            };
+        const res = await saveProfile();
+        if (res?.ok) setMessage({ type: "success", text: res.message });
+        else setMessage({ type: "error", text: res?.message || "Failed to update profile." });
 
-            if (emailChanged) {
-                payload.email = profile.email;
-                payload.currentPassword = profile.currentPassword;
-            }
+        setSavingProfile(false);
+    }, [clearMessage, saveProfile]);
 
-            const res = await api.patch("/settings/profile", payload);
-            const u = res.data.user;
+    const handleChangePassword = useCallback(async () => {
+        clearMessage();
 
-            const updatedEmail = u?.email || "";
-            setOriginalEmail(updatedEmail);
+        const res = await submitPassword();
+        if (res?.ok) setMessage({ type: "success", text: res.message });
+        else setMessage({ type: "error", text: res?.message || "Failed to update password." });
+    }, [clearMessage, submitPassword]);
 
-            setProfile({
-                name: u?.name || "",
-                surname: u?.surname || "",
-                email: updatedEmail,
-                currentPassword: "",
-            });
-
-            setSuccess("Profil güncellendi.");
-        } catch (err) {
-            console.error(err);
-            setError(err?.response?.data?.message || "Profil güncellenirken hata oluştu.");
-        } finally {
-            setSavingProfile(false);
-        }
-    }
-
-    async function changePassword() {
-        if (!pw.currentPassword || !pw.newPassword) {
-            setError("Mevcut şifre ve yeni şifre zorunludur.");
-            return;
-        }
-        if (pw.newPassword.length < 6) {
-            setError("Yeni şifre en az 6 karakter olmalı.");
-            return;
-        }
-        if (pw.newPassword !== pw.confirm) {
-            setError("Yeni şifreler eşleşmiyor.");
-            return;
-        }
-
-        try {
-            setSavingPw(true);
-            setError("");
-            setSuccess("");
-
-            await api.patch("/settings/password", {
-                currentPassword: pw.currentPassword,
-                newPassword: pw.newPassword,
-            });
-
-            setPw({ currentPassword: "", newPassword: "", confirm: "" });
-            setSuccess("Şifre güncellendi.");
-        } catch (err) {
-            console.error(err);
-            setError(err?.response?.data?.message || "Şifre güncellenirken hata oluştu.");
-        } finally {
-            setSavingPw(false);
-        }
-    }
-
-    if (initialLoading || pageLoading) {
-        return (
-            <main className="flex items-center justify-center h-screen text-smoke">
-                <LoadingSpinner />
-            </main>
-        );
-    }
+    if (initialLoading || profileLoading) return <FullPageSpinner />;
+    if (!isAuthenticated) return <FullPageSpinner />;
 
     return (
         <main className="text-smoke">
             <div className="space-y-6">
-                <div>
-                    <h1 className="text-2xl font-semibold">Settings</h1>
-                    <p className="text-sm text-silver">Profil ve şifre ayarlarını yönet.</p>
-                </div>
+                <SettingsHeader />
 
-                {error && (
-                    <p className="text-sm text-wrong border border-wrong/40 rounded-xl px-4 py-2">
-                        {error}
+                {message.type === "error" ? (
+                    <p className="px-4 py-2 rounded-xl border border-wrong/40 text-sm text-wrong">
+                        {message.text}
                     </p>
-                )}
-                {success && (
-                    <p className="text-sm text-info border border-info/30 rounded-xl px-4 py-2">
-                        {success}
+                ) : null}
+
+                {message.type === "success" ? (
+                    <p className="px-4 py-2 rounded-xl border border-info/30 text-sm text-info">
+                        {message.text}
                     </p>
-                )}
+                ) : null}
 
-                {/* Profile */}
-                <section className="rounded-3xl border border-jet p-6 space-y-4">
-                    <h2 className="text-lg font-semibold">Profile</h2>
+                <ProfileSection
+                    profile={profile}
+                    emailChanged={emailChanged}
+                    saving={savingProfile}
+                    onChange={handleProfileChange}
+                    onSave={handleSaveProfile}
+                />
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <FormInput
-                            type="text"
-                            placeholder="name"
-                            value={profile.name}
-                            onChange={setProfileField("name")}
-                        />
-                        <FormInput
-                            type="text"
-                            placeholder="surname"
-                            value={profile.surname}
-                            onChange={setProfileField("surname")}
-                        />
-                    </div>
-
-                    <FormInput
-                        type="email"
-                        placeholder="email"
-                        value={profile.email}
-                        onChange={setProfileField("email")}
-                    />
-
-                    {/* ✅ Email değiştiyse şifre iste */}
-                    {emailChanged && (
-                        <div className="space-y-2">
-                            <p className="text-xs text-silver">
-                                Güvenlik için email değiştirmeden önce mevcut şifreni doğrulamalısın.
-                            </p>
-                            <PasswordInput
-                                placeholder="current password (required for email change)"
-                                value={profile.currentPassword}
-                                onChange={setProfileField("currentPassword")}
-                            />
-                        </div>
-                    )}
-
-                    <div className="flex justify-end">
-                        <BorderButton
-                            text={savingProfile ? "Saving..." : "Save Profile"}
-                            disabled={savingProfile}
-                            onClick={saveProfile}
-                        />
-                    </div>
-                </section>
-
-                {/* Password */}
-                <section className="rounded-3xl border border-jet p-6 space-y-4">
-                    <h2 className="text-lg font-semibold">Password</h2>
-
-                    <PasswordInput
-                        placeholder="current password"
-                        value={pw.currentPassword}
-                        onChange={setPwField("currentPassword")}
-                    />
-                    <PasswordInput
-                        placeholder="new password"
-                        value={pw.newPassword}
-                        onChange={setPwField("newPassword")}
-                    />
-                    <PasswordInput
-                        placeholder="confirm new password"
-                        value={pw.confirm}
-                        onChange={setPwField("confirm")}
-                    />
-
-                    <div className="flex justify-end">
-                        <BorderButton
-                            text={savingPw ? "Updating..." : "Update Password"}
-                            disabled={savingPw}
-                            onClick={changePassword}
-                        />
-                    </div>
-
-                    <p className="text-xs text-silver">
-                        Güvenlik için yeni şifren en az 6 karakter olmalı.
-                    </p>
-                </section>
+                <PasswordSection
+                    pw={pw}
+                    saving={savingPw}
+                    onChange={handlePwChange}
+                    onSubmit={handleChangePassword}
+                />
             </div>
         </main>
     );

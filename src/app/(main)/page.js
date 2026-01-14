@@ -1,90 +1,106 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+
 import { useAuth } from "@/context/AuthContext";
+
 import LoadingSpinner from "@/components/loading-spinner";
 import BorderButton from "@/components/buttons/border-button";
 import Button from "@/components/buttons/button";
 
-function Feature({ title, text }) {
+function FullPageSpinner() {
   return (
-    <div className="rounded-3xl border border-jet p-6 space-y-2">
-      <h3 className="font-semibold text-lg">{title}</h3>
+    <main className="flex items-center justify-center h-screen text-smoke">
+      <LoadingSpinner />
+    </main>
+  );
+}
+
+function getRedirectPath(user) {
+  if (user?.role === "ADMIN") return "/admin/dashboard";
+  return "/dashboard";
+}
+
+function FeatureCard({ title, text }) {
+  return (
+    <div className="p-6 rounded-3xl border border-jet space-y-2 hover:text-warning transition-colors">
+      <h3 className="text-lg font-semibold">{title}</h3>
       <p className="text-sm text-silver">{text}</p>
     </div>
   );
 }
 
 function Landing({ onLogin, onSignup }) {
+  const features = useMemo(
+    () => [
+      {
+        title: "Spot Unused Subscriptions",
+        text: "Identify subscriptions you're paying for but not actually using.",
+      },
+      {
+        title: "Track Renewals",
+        text: "Never get surprised by payment or renewal dates again.",
+      },
+      {
+        title: "Clarify Monthly Spending",
+        text: "Quickly see the total cost impact of your active subscriptions.",
+      },
+    ],
+    []
+  );
+
+  const steps = useMemo(
+    () => [
+      { title: "1) Choose a platform", text: "Pick the service you use from the list." },
+      { title: "2) Enter the details", text: "Add price and billing cycle information." },
+      { title: "3) Keep track", text: "Stay in control with the dashboard and calendar." },
+    ],
+    []
+  );
+
   return (
     <main className="text-smoke">
       <div className="space-y-20">
-
         {/* HERO */}
-        <section className="text-center max-w-3xl mx-auto mt-24 px-6 space-y-6">
+        <section className="text-center max-w-full mx-auto mt-24 px-6 space-y-6">
           <h1 className="text-4xl md:text-5xl font-semibold leading-tight">
-            Aboneliklerini <br />
-            <span className="text-info">tek yerden</span> takip et
+            Track your subscriptions <br />
+            <span className="text-info">in one place</span>
           </h1>
 
           <p className="text-lg text-silver">
-            Ne zaman yenileniyor, ne kadar ödüyorsun — hepsi net.
-            Takvim ve dashboard üzerinden kolayca kontrol et.
+            Renewal dates and what you pay — all crystal clear.
+            Easily monitor everything from your calendar and dashboard.
           </p>
         </section>
 
         {/* FEATURES */}
         <section className="max-w-5xl mx-auto px-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Feature
-              title="Unutulan Abonelikleri Gör"
-              text="Kullanmadan para ödediğin abonelikleri fark et."
-            />
-            <Feature
-              title="Yenilenmeleri Takip Et"
-              text="Ödeme/yenilenme günleri sürpriz olmasın."
-            />
-            <Feature
-              title="Aylık Harcamayı Netleştir"
-              text="Aktif aboneliklerin toplam etkisini hızlıca gör."
-            />
+            {features.map((f) => (
+              <FeatureCard key={f.title} title={f.title} text={f.text} />
+            ))}
           </div>
         </section>
 
         {/* HOW IT WORKS */}
         <section className="max-w-4xl mx-auto px-6 text-center space-y-10">
-          <h2 className="text-2xl font-semibold">Nasıl çalışır?</h2>
+          <h2 className="text-2xl font-semibold">How it works</h2>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
-            <div className="space-y-2">
-              <p className="text-info font-semibold">1) Platformu seç</p>
-              <p className="text-sm text-silver">
-                Kullandığın servisi listeden seç.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-info font-semibold">2) Bilgileri gir</p>
-              <p className="text-sm text-silver">
-                Ücret ve tekrar bilgilerini ekle.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-info font-semibold">3) Takip et</p>
-              <p className="text-sm text-silver">
-                Dashboard + takvim ile kontrol sende olsun.
-              </p>
-            </div>
+            {steps.map((s) => (
+              <div key={s.title} className="space-y-2">
+                <p className="text-info font-semibold">{s.title}</p>
+                <p className="text-sm text-silver">{s.text}</p>
+              </div>
+            ))}
           </div>
         </section>
 
         {/* CTA */}
         <section className="text-center pb-24 px-6 space-y-6">
-          <h2 className="text-2xl font-semibold">
-            Hemen başlamaya hazır mısın?
-          </h2>
+          <h2 className="text-2xl font-semibold">Ready to get started?</h2>
 
           <div className="flex justify-center gap-4">
             <Button text="Create Account" onClick={onSignup} />
@@ -92,10 +108,9 @@ function Landing({ onLogin, onSignup }) {
           </div>
 
           <p className="text-xs text-silver">
-            Kayıt olduktan sonra ilk aboneliğini 1 dakikadan kısa sürede ekleyebilirsin.
+            After signing up, you can add your first subscription in under a minute.
           </p>
         </section>
-
       </div>
     </main>
   );
@@ -107,32 +122,15 @@ export default function HomePage() {
 
   useEffect(() => {
     if (initialLoading) return;
+    if (!isAuthenticated) return;
 
-    if (isAuthenticated) {
-      if (user?.role === "ADMIN") router.replace("/admin/dashboard");
-      else router.replace("/dashboard");
-    }
+    router.replace(getRedirectPath(user));
   }, [initialLoading, isAuthenticated, user, router]);
 
-  // Auth durumu netleşene kadar spinner
-  if (initialLoading) {
-    return (
-      <main className="flex items-center justify-center h-screen text-smoke">
-        <LoadingSpinner />
-      </main>
-    );
-  }
+  if (initialLoading) return <FullPageSpinner />;
 
-  // Girişliyse redirect çalışır; burada kısa spinner uygundur
-  if (isAuthenticated) {
-    return (
-      <main className="flex items-center justify-center h-screen text-smoke">
-        <LoadingSpinner />
-      </main>
-    );
-  }
+  if (isAuthenticated) return <FullPageSpinner />;
 
-  // Giriş yoksa landing
   return (
     <Landing
       onLogin={() => router.push("/login")}

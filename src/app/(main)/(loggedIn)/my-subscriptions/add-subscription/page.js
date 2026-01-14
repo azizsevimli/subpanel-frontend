@@ -1,25 +1,42 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/context/AuthContext";
-import LoadingSpinner from "@/components/loading-spinner";
-import BorderButton from "@/components/buttons/border-button";
-
-import PlatformSelectSection from "@/components/main/subscription/platform-select-section";
-import PlatformFieldsSection from "@/components/main/subscription/platform-fields-section";
-
 import { usePlatforms } from "@/hooks/usePlatforms";
 import { usePlatformFields } from "@/hooks/usePlatformFields";
+
 import api from "@/lib/api";
+
+import LoadingSpinner from "@/components/loading-spinner";
+import BorderButton from "@/components/buttons/border-button";
+import PlatformSelectSection from "@/components/main/subscription/platform-select-section";
+import PlatformFieldsSection from "@/components/main/subscription/platform-fields-section";
+import SubscriptionDetailsSection from "@/components/main/subscription/subscription-details-section";
+import BackSubscriptionButton from "@/components/main/subscription/back-subscription-button";
+
+function FullPageSpinner() {
+    return (
+        <main className="flex items-center justify-center h-screen text-smoke">
+            <LoadingSpinner />
+        </main>
+    );
+}
+
+function isEmptyValue(v) {
+    return v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
+}
 
 export default function AddSubscriptionPage() {
     const router = useRouter();
     const { initialLoading, isAuthenticated } = useAuth();
 
+    const enabled = !initialLoading && isAuthenticated;
+
     const [selectedPlatformId, setSelectedPlatformId] = useState("");
     const [fieldValues, setFieldValues] = useState({});
+
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
 
@@ -27,19 +44,15 @@ export default function AddSubscriptionPage() {
         status: "ACTIVE",
         startDate: "",
         endDate: "",
-        repeatUnit: "MONTH",     // WEEK | MONTH | YEAR
+        repeatUnit: "MONTH",
         repeatInterval: "1",
         amount: "",
         currency: "TRY",
-
-        // ✅ yeni standart alanlar
         planId: "",
         accountEmail: "",
         accountPhone: "",
         notes: "",
     });
-
-    const enabled = !initialLoading && isAuthenticated;
 
     const { platforms, loadingPlatforms, error: platformsError } = usePlatforms({ enabled });
     const { plans, fields, loadingFields, error: fieldsError } = usePlatformFields({
@@ -51,6 +64,14 @@ export default function AddSubscriptionPage() {
         return platforms.find((p) => p.id === selectedPlatformId) || null;
     }, [platforms, selectedPlatformId]);
 
+    const isSaveDisabled = !selectedPlatformId || saving || loadingFields;
+    const saveText = saving
+        ? "Saving..."
+        : !selectedPlatformId
+            ? "Select a platform to continue"
+            : "Save";
+
+
     const hasActivePlans = Array.isArray(plans) && plans.length > 0;
 
     useEffect(() => {
@@ -61,66 +82,65 @@ export default function AddSubscriptionPage() {
     useEffect(() => {
         setFieldValues({});
         setError("");
-
-        // platform değişince plan seçimini temizle
         setTracking((p) => ({ ...p, planId: "" }));
     }, [selectedPlatformId]);
 
     useEffect(() => {
-        setError(platformsError || fieldsError || "");
+        const msg = platformsError || fieldsError || "";
+        if (msg) setError(msg);
     }, [platformsError, fieldsError]);
 
-    function onChangeFieldValue(fieldId, val) {
+    const onChangeFieldValue = useCallback((fieldId, val) => {
+        setError("");
         setFieldValues((prev) => ({ ...prev, [fieldId]: val }));
-    }
+    }, []);
 
-    function setTrackingField(field) {
-        return (val) => setTracking((p) => ({ ...p, [field]: val }));
-    }
+    const onChangeTrackingField = useCallback((field, val) => {
+        setError("");
+        setTracking((prev) => ({ ...prev, [field]: val }));
+    }, []);
 
-    function validateBeforeSave() {
-        if (!selectedPlatformId) return "Lütfen bir platform seç.";
-        if (!tracking.startDate) return "Start Date zorunludur.";
+    const validateBeforeSave = useCallback(() => {
+        if (!selectedPlatformId) return "Please select a platform.";
+        if (!tracking.startDate) return "Start Date is required.";
 
         if (hasActivePlans && !tracking.planId) {
-            return "Bu platformda plan seçimi zorunludur.";
+            return "Please select a plan for this platform.";
         }
 
         const interval = Number(tracking.repeatInterval);
         if (!Number.isInteger(interval) || interval < 1) {
-            return "Repeat interval en az 1 olmalıdır.";
+            return "Repeat interval must be at least 1.";
         }
 
         for (const f of fields) {
             if (!f.required) continue;
             const v = fieldValues[f.id];
-            const empty =
-                v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
-            if (empty) return `Zorunlu alan: ${f.label}`;
+            if (isEmptyValue(v)) return `Required field: ${f.label}`;
         }
 
         if (tracking.endDate) {
             const s = new Date(tracking.startDate);
             const e = new Date(tracking.endDate);
             if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime()) && e.getTime() < s.getTime()) {
-                return "End Date, Start Date'den küçük olamaz.";
+                return "End Date cannot be earlier than Start Date.";
             }
         }
 
         return "";
-    }
+    }, [selectedPlatformId, tracking, hasActivePlans, fields, fieldValues]);
 
-    async function handleSave() {
+    const handleSave = useCallback(async () => {
         const validationError = validateBeforeSave();
         if (validationError) {
             setError(validationError);
             return;
         }
 
-        try {
-            setSaving(true);
-            setError("");
+        setSaving(true);
+        setError("");
 
+        try {
             const payload = {
                 platformId: selectedPlatformId,
 
@@ -128,14 +148,12 @@ export default function AddSubscriptionPage() {
                 startDate: tracking.startDate,
                 endDate: tracking.endDate || null,
 
-                repeatUnit: tracking.repeatUnit, // WEEK | MONTH | YEAR
+                repeatUnit: tracking.repeatUnit,
                 repeatInterval: Number(tracking.repeatInterval || 1),
 
-                // ✅ Decimal güvenliği: string gönder
                 amount: tracking.amount ? String(tracking.amount) : null,
                 currency: tracking.currency ? String(tracking.currency).toUpperCase() : null,
 
-                // ✅ yeni standart alanlar
                 planId: tracking.planId ? String(tracking.planId) : null,
                 accountEmail: tracking.accountEmail ? String(tracking.accountEmail) : null,
                 accountPhone: tracking.accountPhone ? String(tracking.accountPhone) : null,
@@ -151,220 +169,62 @@ export default function AddSubscriptionPage() {
             router.replace("/my-subscriptions");
         } catch (err) {
             console.error(err);
-            setError(err?.response?.data?.message || "Kaydedilirken hata oluştu.");
+            setError(err?.response?.data?.message || "Failed to save subscription.");
         } finally {
             setSaving(false);
         }
-    }
+    }, [validateBeforeSave, selectedPlatformId, tracking, fields, fieldValues, router]);
 
-    if (initialLoading || (!initialLoading && !isAuthenticated)) {
-        return (
-            <main className="flex items-center justify-center h-screen text-smoke">
-                <LoadingSpinner />
-            </main>
-        );
-    }
-
-    if (loadingPlatforms) {
-        return (
-            <main className="flex items-center justify-center h-screen text-smoke">
-                <LoadingSpinner />
-            </main>
-        );
-    }
+    if (initialLoading) return <FullPageSpinner />;
+    if (!isAuthenticated) return <FullPageSpinner />;
+    if (loadingPlatforms) return <FullPageSpinner />;
 
     return (
         <main className="text-smoke">
             <div className="space-y-6">
                 <div>
+                    <BackSubscriptionButton className="mb-3" />
                     <h1 className="text-2xl font-semibold">Add Subscription</h1>
-                    <p className="text-sm text-silver">Platform seç ve alanları doldurup kaydet.</p>
+                    <p className="text-sm text-silver">Select a platform, fill in the details, and save.</p>
                 </div>
 
-                {error && (
+                {error ? (
                     <p className="text-sm text-wrong border border-wrong/40 rounded-xl px-4 py-2">{error}</p>
-                )}
+                ) : null}
 
                 <PlatformSelectSection
                     platforms={platforms}
                     selectedPlatformId={selectedPlatformId}
-                    onChange={setSelectedPlatformId}
+                    onChange={(id) => setSelectedPlatformId(id)}
                     selectedPlatform={selectedPlatform}
                 />
 
-                <section className="rounded-3xl border border-jet p-6 space-y-4">
-                    <h2 className="text-lg font-semibold">Subscription Details</h2>
+                {!selectedPlatformId ? (
+                    null
+                ) : (
+                    <SubscriptionDetailsSection
+                        selectedPlatformId={selectedPlatformId}
+                        hasActivePlans={hasActivePlans}
+                        plans={plans}
+                        tracking={tracking}
+                        onChangeTrackingField={onChangeTrackingField}
+                    />
+                )}
 
-                    {/* ✅ Plan select (aktif plan varsa zorunlu) */}
-                    {selectedPlatformId ? (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                            <label className="text-sm text-silver">
-                                Plan {hasActivePlans ? <span className="text-wrong">*</span> : null}
-                            </label>
-
-                            <select
-                                value={tracking.planId}
-                                onChange={(e) => setTrackingField("planId")(e.target.value)}
-                                className="w-full md:col-span-2 px-4 py-2 rounded-full border border-jet bg-night text-sm"
-                                disabled={!hasActivePlans}
-                            >
-                                <option value="">{hasActivePlans ? "Select a plan..." : "No active plan"}</option>
-                                {plans.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                        {p.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    ) : null}
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                        <label className="text-sm text-silver">Status</label>
-                        <select
-                            value={tracking.status}
-                            onChange={(e) => setTrackingField("status")(e.target.value)}
-                            className="w-full md:col-span-2 px-4 py-2 rounded-full border border-jet bg-night text-sm"
-                        >
-                            <option value="ACTIVE">ACTIVE</option>
-                            <option value="PAUSED">PAUSED</option>
-                            <option value="CANCELED">CANCELED</option>
-                        </select>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <p className="text-sm text-silver">Start Date</p>
-                            <input
-                                type="date"
-                                value={tracking.startDate}
-                                onChange={(e) => setTrackingField("startDate")(e.target.value)}
-                                className="w-full h-[35px] px-3 rounded-[15px] border border-jet outline-none bg-smoke text-sm text-night"
-                            />
-                            <p className="text-xs text-silver">Required</p>
-                        </div>
-
-                        <div className="space-y-2">
-                            <p className="text-sm text-silver">End Date</p>
-                            <input
-                                type="date"
-                                value={tracking.endDate}
-                                onChange={(e) => setTrackingField("endDate")(e.target.value)}
-                                className="w-full h-[35px] px-3 rounded-[15px] border border-jet outline-none bg-smoke text-sm text-night"
-                            />
-                            <p className="text-xs text-silver">Optional</p>
-                        </div>
-                    </div>
-
-                    {/* ✅ Repeat */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                            <p className="text-sm text-silver">Repeat Unit</p>
-                            <select
-                                value={tracking.repeatUnit}
-                                onChange={(e) => setTrackingField("repeatUnit")(e.target.value)}
-                                className="w-full px-4 py-2 rounded-full border border-jet bg-night text-sm"
-                            >
-                                <option value="WEEK">WEEK</option>
-                                <option value="MONTH">MONTH</option>
-                                <option value="YEAR">YEAR</option>
-                            </select>
-                            <p className="text-xs text-silver">Required</p>
-                        </div>
-
-                        <div className="space-y-2">
-                            <p className="text-sm text-silver">Repeat Interval</p>
-                            <input
-                                type="number"
-                                min={1}
-                                value={tracking.repeatInterval}
-                                onChange={(e) => setTrackingField("repeatInterval")(e.target.value)}
-                                placeholder="1"
-                                className="w-full h-[35px] px-3 rounded-[15px] border border-jet outline-none bg-smoke text-sm text-night"
-                            />
-                            <p className="text-xs text-silver">1 = every unit</p>
-                        </div>
-
-                        <div className="space-y-2">
-                            <p className="text-sm text-silver">Amount</p>
-                            <input
-                                type="number"
-                                step="0.01"
-                                value={tracking.amount}
-                                onChange={(e) => setTrackingField("amount")(e.target.value)}
-                                placeholder="0.00"
-                                className="w-full h-[35px] px-3 rounded-[15px] border border-jet outline-none bg-smoke text-sm text-night"
-                            />
-                            <p className="text-xs text-silver">Optional</p>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                            <p className="text-sm text-silver">Currency</p>
-                            <input
-                                type="text"
-                                value={tracking.currency}
-                                onChange={(e) => setTrackingField("currency")(e.target.value)}
-                                placeholder="TRY"
-                                className="w-full h-[35px] px-3 rounded-[15px] border border-jet outline-none bg-smoke text-sm text-night"
-                            />
-                            <p className="text-xs text-silver">Optional</p>
-                        </div>
-
-                        <div className="md:col-span-2 rounded-2xl border border-jet px-4 py-3 text-sm text-silver">
-                            <span className="text-smoke font-medium">Rule:</span>{" "}
-                            Renewal date = Start Date + (Repeat Unit × Interval). Period ends one day before renewal.
-                        </div>
-                    </div>
-
-                    {/* ✅ Account / Notes */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                            <p className="text-sm text-silver">Account Email</p>
-                            <input
-                                type="email"
-                                value={tracking.accountEmail}
-                                onChange={(e) => setTrackingField("accountEmail")(e.target.value)}
-                                placeholder="email@example.com"
-                                className="w-full h-[35px] px-3 rounded-[15px] border border-jet outline-none bg-smoke text-sm text-night"
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <p className="text-sm text-silver">Account Phone</p>
-                            <input
-                                type="text"
-                                value={tracking.accountPhone}
-                                onChange={(e) => setTrackingField("accountPhone")(e.target.value)}
-                                placeholder="+90..."
-                                className="w-full h-[35px] px-3 rounded-[15px] border border-jet outline-none bg-smoke text-sm text-night"
-                            />
-                        </div>
-
-                        <div className="space-y-2 md:col-span-3">
-                            <p className="text-sm text-silver">Notes</p>
-                            <textarea
-                                value={tracking.notes}
-                                onChange={(e) => setTrackingField("notes")(e.target.value)}
-                                placeholder="Optional notes..."
-                                className="w-full min-h-[90px] px-3 py-2 rounded-[15px] border border-jet outline-none bg-smoke text-sm text-night"
-                            />
-                        </div>
-                    </div>
-                </section>
-
-                <PlatformFieldsSection
-                    selectedPlatformId={selectedPlatformId}
-                    loadingFields={loadingFields}
-                    fields={fields}
-                    fieldValues={fieldValues}
-                    onChangeFieldValue={onChangeFieldValue}
-                />
+                {selectedPlatformId && (loadingFields || fields.length > 0) ? (
+                    <PlatformFieldsSection
+                        selectedPlatformId={selectedPlatformId}
+                        loadingFields={loadingFields}
+                        fields={fields}
+                        fieldValues={fieldValues}
+                        onChangeFieldValue={onChangeFieldValue}
+                    />
+                ) : null}
 
                 <div className="flex justify-end">
                     <BorderButton
-                        text={saving ? "Saving..." : "Save"}
-                        disabled={!selectedPlatformId || saving || loadingFields}
+                        text={saveText}
+                        disabled={isSaveDisabled}
                         onClick={handleSave}
                     />
                 </div>

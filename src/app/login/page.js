@@ -1,189 +1,191 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+
 import { useAuth } from "@/context/AuthContext";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
-import Link from "next/link";
-import Logo from "@/components/logo";
+
 import FormInput from "@/components/inputs/input";
 import PasswordInput from "@/components/inputs/password";
 import BorderButton from "@/components/buttons/border-button";
-import LoadingSpinner from "@/components/loading-spinner";
+import AuthCard from "@/components/auth/auth-card";
+import AuthPageSpinner from "@/components/auth/auth-page-spinner";
+
 import api from "@/lib/api";
+
+const DEFAULT_ERROR_LOGIN = "An error occurred while signing in. Please try again.";
+
+const DEFAULT_ERROR_FORGOT = "An error occurred while requesting a password reset.";
+
+const DEFAULT_FORGOT_SUCCESS = "If this email is registered, a password reset link has been sent.";
 
 export default function Login() {
     const router = useRouter();
     const { login } = useAuth();
     const { loading: checking } = useRedirectIfAuthenticated();
 
-    const [submitting, setSubmitting] = useState(false);
-    const [error, setError] = useState("");
     const [form, setForm] = useState({ email: "", password: "" });
 
-    // ✅ forgot password UI state
+    const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState("");
+
     const [forgotOpen, setForgotOpen] = useState(false);
     const [forgotSubmitting, setForgotSubmitting] = useState(false);
     const [forgotMessage, setForgotMessage] = useState("");
 
-    if (checking) {
-        return (
-            <main className="flex justify-center items-center h-[calc(100vh-80px)] text-smoke">
-                <LoadingSpinner />
-            </main>
-        );
-    }
+    const resetMessages = useCallback(() => {
+        setError("");
+        setForgotMessage("");
+    }, []);
 
-    function handleChange(field) {
+    const handleChange = useCallback((field) => {
         return (e) => {
-            setForm((prev) => ({
-                ...prev,
-                [field]: e.target.value,
-            }));
+            const value = e.target.value;
+            setForm((prev) => ({ ...prev, [field]: value }));
         };
-    }
+    }, []);
 
-    async function handleSubmit(e) {
-        e.preventDefault();
-        setError("");
-        setForgotMessage("");
-        setSubmitting(true);
+    const openForgotPassword = useCallback(() => {
+        setForgotOpen(true);
+        resetMessages();
+    }, [resetMessages]);
 
-        try {
-            await login(form.email, form.password);
-            router.push("/dashboard");
-        } catch (err) {
-            console.error(err);
-            const message =
-                err.response?.data?.message ||
-                "Giriş sırasında bir hata oluştu. Lütfen tekrar deneyin.";
-            setError(message);
-        } finally {
-            setSubmitting(false);
-        }
-    }
+    const backToLogin = useCallback(() => {
+        setForgotOpen(false);
+        resetMessages();
+    }, [resetMessages]);
 
-    async function handleForgotSubmit(e) {
-        e.preventDefault();
-        setError("");
-        setForgotMessage("");
+    const handleSubmit = useCallback(
+        async (e) => {
+            e.preventDefault();
+            resetMessages();
+            setSubmitting(true);
 
-        const email = String(form.email || "").trim();
-        if (!email) {
-            setError("Lütfen email adresini gir.");
-            return;
-        }
+            try {
+                await login(form.email, form.password);
+                router.push("/dashboard");
+            } catch (err) {
+                console.error(err);
+                const message = err?.response?.data?.message || DEFAULT_ERROR_LOGIN;
+                setError(message);
+            } finally {
+                setSubmitting(false);
+            }
+        },
+        [form.email, form.password, login, router, resetMessages]
+    );
 
-        try {
+    const handleForgotSubmit = useCallback(
+        async (e) => {
+            e.preventDefault();
+            resetMessages();
+
+            const email = String(form.email || "").trim();
+            if (!email) {
+                setError("Please enter your email address.");
+                return;
+            }
+
             setForgotSubmitting(true);
+            try {
+                const res = await api.post("/password/forgot", { email });
+                setForgotMessage(res.data?.message || DEFAULT_FORGOT_SUCCESS);
+            } catch (err) {
+                console.error(err);
+                const message = err?.response?.data?.message || DEFAULT_ERROR_FORGOT;
+                setError(message);
+            } finally {
+                setForgotSubmitting(false);
+            }
+        },
+        [form.email, resetMessages]
+    );
 
-            // ✅ Backend: POST /api/password/forgot
-            const res = await api.post("/password/forgot", { email });
-
-            setForgotMessage(
-                res.data?.message ||
-                "Eğer bu email kayıtlıysa şifre sıfırlama linki gönderildi."
-            );
-        } catch (err) {
-            console.error(err);
-            setError(
-                err.response?.data?.message ||
-                "Şifre sıfırlama isteği sırasında hata oluştu."
-            );
-        } finally {
-            setForgotSubmitting(false);
-        }
-    }
+    if (checking) return <AuthPageSpinner />;
 
     return (
-        <main className="flex items-center justify-center mt-32 px-10 text-smoke">
-            <div className="w-full md:w-1/2 xl:w-1/3 border-2 border-jet rounded-4xl space-y-7 p-10">
-                <Logo />
+        <AuthCard>
+            {!forgotOpen ? (
+                <form className="space-y-5" onSubmit={handleSubmit}>
+                    <FormInput
+                        type="email"
+                        placeholder="email"
+                        value={form.email}
+                        onChange={handleChange("email")}
+                    />
 
-                {/* ✅ LOGIN FORM */}
-                {!forgotOpen ? (
-                    <form className="space-y-5" onSubmit={handleSubmit}>
+                    <PasswordInput
+                        value={form.password}
+                        onChange={handleChange("password")}
+                    />
+
+                    {error && <p className="px-4 py-2 rounded-xl border border-wrong/40 text-sm text-wrong">{error}</p>}
+
+                    <BorderButton
+                        text={submitting ? "Signing in..." : "Login"}
+                        className="w-full font-semibold"
+                        disabled={submitting}
+                    />
+
+                    <div className="text-center text-sm font-light">
+                        <button
+                            type="button"
+                            onClick={openForgotPassword}
+                            className="underline underline-offset-2 text-warning"
+                        >
+                            Forgot password?
+                        </button>
+                    </div>
+
+                    <div className="text-center text-sm font-light">
+                        <span className="text-sm text-silver font-light">
+                            Don{"'"}t have an account?
+                        </span>
+                        <Link
+                            href="/signup"
+                            className="mx-2 underline underline-offset-2 text-info"
+                        >
+                            Sign Up
+                        </Link>
+                    </div>
+                </form>
+            ) : (
+                <form className="space-y-5" onSubmit={handleForgotSubmit}>
+                    <div className="space-y-2">
+                        <p className="text-sm text-silver">
+                            Enter your email address. If it is registered, we{"'"}ll send you a password reset link.
+                        </p>
+
                         <FormInput
                             type="email"
                             placeholder="email"
                             value={form.email}
                             onChange={handleChange("email")}
                         />
+                    </div>
 
-                        <PasswordInput value={form.password} onChange={handleChange("password")} />
+                    {error && <p className="px-4 py-2 rounded-xl border border-wrong/40 text-sm text-wrong">{error}</p>}
+                    {forgotMessage && <p className="px-4 py-2 rounded-xl border border-info/30 text-sm text-info">{forgotMessage}</p>}
 
-                        {error && <p className="text-sm text-wrong font-light">{error}</p>}
+                    <BorderButton
+                        text={forgotSubmitting ? "Sending..." : "Send reset link"}
+                        className="w-full font-semibold"
+                        disabled={forgotSubmitting}
+                    />
 
-                        <BorderButton
-                            text={submitting ? "Logging in..." : "Login"}
-                            className="w-full font-semibold"
-                            disabled={submitting}
-                        />
-
-                        <div className="text-center text-sm font-light">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setForgotOpen(true);
-                                    setError("");
-                                    setForgotMessage("");
-                                }}
-                                className="underline underline-offset-2 text-warning"
-                            >
-                                Forgot password?
-                            </button>
-                        </div>
-
-                        <div className="text-center text-sm font-light">
-                            <span className="text-sm text-silver font-light">
-                                Don{"'"}t have an account?
-                            </span>
-                            <Link href="/signup" className="underline underline-offset-2 text-info mx-2">
-                                Sign Up
-                            </Link>
-                        </div>
-                    </form>
-                ) : (
-                    /* ✅ FORGOT PASSWORD */
-                    <form className="space-y-5" onSubmit={handleForgotSubmit}>
-                        <div className="space-y-2">
-                            <p className="text-sm text-silver">
-                                Email adresini gir. Eğer kayıtlıysa şifre sıfırlama linki gönderilecek.
-                            </p>
-
-                            <FormInput
-                                type="email"
-                                placeholder="email"
-                                value={form.email}
-                                onChange={handleChange("email")}
-                            />
-                        </div>
-
-                        {error && <p className="text-sm text-wrong font-light">{error}</p>}
-                        {forgotMessage && <p className="text-sm text-info font-light">{forgotMessage}</p>}
-
-                        <BorderButton
-                            text={forgotSubmitting ? "Sending..." : "Send reset link"}
-                            className="w-full font-semibold"
-                            disabled={forgotSubmitting}
-                        />
-
-                        <div className="text-center text-sm font-light">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setForgotOpen(false);
-                                    setError("");
-                                    setForgotMessage("");
-                                }}
-                                className="underline underline-offset-2 text-silver hover:text-smoke"
-                            >
-                                Back to login
-                            </button>
-                        </div>
-                    </form>
-                )}
-            </div>
-        </main>
+                    <div className="text-center text-sm font-light">
+                        <button
+                            type="button"
+                            onClick={backToLogin}
+                            className="underline underline-offset-2 text-silver hover:text-smoke"
+                        >
+                            Back to login
+                        </button>
+                    </div>
+                </form>
+            )}
+        </AuthCard>
     );
 }

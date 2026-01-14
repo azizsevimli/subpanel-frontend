@@ -2,13 +2,13 @@
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import FormInput from "@/components/inputs/input";
+import ReqOptLabel from "@/components/required-optional-label";
 
 export default function FieldPreview({ field, value, onChange }) {
     const labelRow = (
-        <div className="flex items-center gap-2">
-            <span className="font-medium">{field.label}</span>
-            {field.required ? <span className="text-xs text-wrong">*</span> : null}
-        </div>
+        <>
+            {field.required ? <ReqOptLabel required>{field.label}</ReqOptLabel> : <ReqOptLabel optional>{field.label}</ReqOptLabel>}
+        </>
     );
 
     switch (field.type) {

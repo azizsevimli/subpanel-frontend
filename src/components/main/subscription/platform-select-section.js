@@ -9,7 +9,7 @@ export default function PlatformSelectSection({
     selectedPlatform,
 }) {
     return (
-        <section className="rounded-3xl border border-jet p-6 space-y-3">
+        <section className=" px-3 py-6 md:p-6 rounded-2xl md:rounded-3xl border border-jet space-y-3">
             <h2 className="text-lg font-semibold">Choose Platform</h2>
 
             <Select value={selectedPlatformId} onValueChange={onChange}>

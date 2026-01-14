@@ -1,7 +1,12 @@
+"use client";
+
+import { usePathname } from "next/navigation";
 import Link from "next/link";
+
 import Logo from "@/components/logo";
 
 export default function Footer() {
+    const pathname = usePathname();
     const year = new Date().getFullYear();
 
     return (
@@ -15,12 +20,14 @@ export default function Footer() {
                         </p>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-3 sm:gap-6 text-sm">
-                        <Link href="/dashboard" className="text-silver hover:text-smoke transition">Dashboard</Link>
-                        <Link href="/my-subscriptions" className="text-silver hover:text-smoke transition">My Subscriptions</Link>
-                        <Link href="/calendar" className="text-silver hover:text-smoke transition">Calendar</Link>
-                        <Link href="/settings" className="text-silver hover:text-smoke transition">Settings</Link>
-                    </div>
+                    {pathname == "/" ? null : (
+                        <div className="flex flex-col sm:flex-row gap-3 sm:gap-6 text-sm">
+                            <Link href="/dashboard" className="text-silver hover:text-smoke transition">Dashboard</Link>
+                            <Link href="/my-subscriptions" className="text-silver hover:text-smoke transition">My Subscriptions</Link>
+                            <Link href="/calendar" className="text-silver hover:text-smoke transition">Calendar</Link>
+                            <Link href="/settings" className="text-silver hover:text-smoke transition">Settings</Link>
+                        </div>
+                    )}
                 </div>
 
                 <div className="mt-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

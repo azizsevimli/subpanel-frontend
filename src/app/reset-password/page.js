@@ -1,24 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Logo from "@/components/logo";
+
 import PasswordInput from "@/components/inputs/password";
 import BorderButton from "@/components/buttons/border-button";
-import LoadingSpinner from "@/components/loading-spinner";
+import AuthCard from "@/components/auth/auth-card";
+import AuthPageSpinner from "@/components/auth/auth-page-spinner";
+
 import api from "@/lib/api";
+
+const DEFAULT_ERROR_RESET = "An error occurred while resetting your password.";
 
 export default function ResetPasswordPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const redirectTimeoutRef = useRef(null);
 
     const token = useMemo(() => {
         return String(searchParams.get("token") || "").trim();
     }, [searchParams]);
 
     const [loading, setLoading] = useState(true);
-
     const [submitting, setSubmitting] = useState(false);
+
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
 
@@ -28,129 +33,106 @@ export default function ResetPasswordPage() {
     });
 
     useEffect(() => {
-        // token kontrolü
-        if (!token) {
-            setError("Geçersiz veya eksik reset token.");
-        }
+        if (!token) setError("Invalid or missing reset token.");
         setLoading(false);
+
+        return () => {
+            if (redirectTimeoutRef.current) {
+                clearTimeout(redirectTimeoutRef.current);
+            }
+        };
     }, [token]);
 
-    function handleChange(field) {
+    const handleChange = useCallback((field) => {
         return (e) => {
-            setForm((prev) => ({
-                ...prev,
-                [field]: e.target.value,
-            }));
+            const value = e.target.value;
+            setForm((prev) => ({ ...prev, [field]: value }));
         };
-    }
+    }, []);
 
-    function validate() {
-        if (!token) return "Geçersiz veya eksik reset token.";
-        if (!form.newPassword || form.newPassword.length < 6) {
-            return "Şifre en az 6 karakter olmalı.";
-        }
-        if (form.newPassword !== form.confirmPassword) {
-            return "Şifreler eşleşmiyor.";
-        }
+    const validate = useCallback(() => {
+        if (!token) return "Invalid or missing reset token.";
+        if (!form.newPassword || form.newPassword.length < 6) return "Password must be at least 6 characters long.";
+        if (form.newPassword !== form.confirmPassword) return "Passwords do not match.";
         return "";
-    }
+    }, [form.confirmPassword, form.newPassword, token]);
 
-    async function handleSubmit(e) {
-        e.preventDefault();
-        setError("");
-        setSuccess("");
+    const handleSubmit = useCallback(
+        async (e) => {
+            e.preventDefault();
+            setError("");
+            setSuccess("");
 
-        const vErr = validate();
-        if (vErr) {
-            setError(vErr);
-            return;
-        }
+            const vErr = validate();
+            if (vErr) {
+                setError(vErr);
+                return;
+            }
 
-        try {
             setSubmitting(true);
+            try {
+                await api.post("/password/reset", {
+                    token,
+                    newPassword: form.newPassword,
+                });
 
-            // ✅ Backend: POST /api/password/reset
-            await api.post("/password/reset", {
-                token,
-                newPassword: form.newPassword,
-            });
+                setSuccess("Your password has been updated. Redirecting you to the login page...");
 
-            setSuccess("Şifren güncellendi. Giriş sayfasına yönlendiriliyorsun...");
+                redirectTimeoutRef.current = setTimeout(() => { router.replace("/login"); }, 1000);
+            } catch (err) {
+                console.error(err);
+                setError(err?.response?.data?.message || DEFAULT_ERROR_RESET);
+            } finally {
+                setSubmitting(false);
+            }
+        },
+        [form.newPassword, router, token, validate]
+    );
 
-            // kısa bir gecikmeyle login'e gönder (UX)
-            setTimeout(() => {
-                router.replace("/login");
-            }, 900);
-        } catch (err) {
-            console.error(err);
-            setError(err?.response?.data?.message || "Şifre sıfırlama sırasında hata oluştu.");
-        } finally {
-            setSubmitting(false);
-        }
-    }
-
-    if (loading) {
-        return (
-            <main className="flex justify-center items-center h-[calc(100vh-80px)] text-smoke">
-                <LoadingSpinner />
-            </main>
-        );
-    }
+    if (loading) return <AuthPageSpinner />;
 
     return (
-        <main className="flex items-center justify-center mt-32 px-10 text-smoke">
-            <div className="w-full md:w-1/2 xl:w-1/3 border-2 border-jet rounded-4xl space-y-7 p-10">
-                <Logo />
-
-                <div className="space-y-2">
-                    <h1 className="text-xl font-semibold">Reset Password</h1>
-                    <p className="text-sm text-silver">
-                        Yeni şifreni belirle. Link geçersizse yeni bir reset isteği oluştur.
-                    </p>
-                </div>
-
-                {error ? (
-                    <p className="text-sm text-wrong border border-wrong/40 rounded-xl px-4 py-2">
-                        {error}
-                    </p>
-                ) : null}
-
-                {success ? (
-                    <p className="text-sm text-info border border-info/30 rounded-xl px-4 py-2">
-                        {success}
-                    </p>
-                ) : null}
-
-                <form className="space-y-5" onSubmit={handleSubmit}>
-                    <PasswordInput
-                        placeholder="new password"
-                        value={form.newPassword}
-                        onChange={handleChange("newPassword")}
-                    />
-
-                    <PasswordInput
-                        placeholder="confirm password"
-                        value={form.confirmPassword}
-                        onChange={handleChange("confirmPassword")}
-                    />
-
-                    <BorderButton
-                        text={submitting ? "Updating..." : "Update Password"}
-                        className="w-full font-semibold"
-                        disabled={submitting || !token}
-                    />
-
-                    <div className="text-center text-sm font-light">
-                        <button
-                            type="button"
-                            onClick={() => router.replace("/login")}
-                            className="underline underline-offset-2 text-silver hover:text-smoke"
-                        >
-                            Back to login
-                        </button>
-                    </div>
-                </form>
+        <AuthCard>
+            <div className="space-y-2">
+                <h1 className="text-xl font-semibold">Reset Password</h1>
+                <p className="text-sm text-silver">
+                    Set your new password. If the link is invalid, request a new reset link.
+                </p>
             </div>
-        </main>
+
+            {error && <p className="px-4 py-2 rounded-xl border border-wrong/40 text-sm text-wrong">{error}</p>}
+
+            {success && <p className="px-4 py-2 rounded-xl border border-info/30 text-sm text-info">{success}</p>}
+
+            <form className="space-y-5" onSubmit={handleSubmit}>
+                <PasswordInput
+                    placeholder="new password"
+                    value={form.newPassword}
+                    onChange={handleChange("newPassword")}
+                />
+
+                <PasswordInput
+                    placeholder="confirm password"
+                    value={form.confirmPassword}
+                    onChange={handleChange("confirmPassword")}
+                />
+
+                <BorderButton
+                    text={submitting ? "Updating..." : "Update Password"}
+                    className="w-full font-semibold"
+                    disabled={submitting || !token}
+                />
+
+                <div className="text-center text-sm font-light">
+                    <button
+                        type="button"
+                        onClick={() => router.replace("/login")}
+                        className="underline underline-offset-2 text-silver hover:text-smoke"
+                    >
+                        Back to login
+                    </button>
+                </div>
+            </form>
+        </AuthCard>
     );
 }

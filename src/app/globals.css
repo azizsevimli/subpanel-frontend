@@ -129,7 +129,72 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* Day names header background */
+.fc .fc-col-header {
+  background-color: #0f172a;
+  /* night / slate-900 */
+}
+
+/* Each day cell */
+.fc .fc-col-header-cell {
+  border-color: #1f2937;
+  /* jet / slate-800 */
+}
+
+/* Day name text (Mon, Tue, Wed...) */
+.fc .fc-col-header-cell-cushion {
+  color: #e5e7eb;
+  /* silver / gray-200 */
+  font-weight: 500;
+  padding: 8px 0;
+}
+
+/* ========== FullCalendar Toolbar Responsive Fix ========== */
+@media (max-width: 768px) {
+
+  .fc .fc-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Sol/orta/sağ bloklar satıra geçebilsin */
+  .fc .fc-toolbar-chunk {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Başlık satırda tam yer kaplasın ve ortalansın */
+  .fc .fc-toolbar-title {
+    font-size: 16px;
+    line-height: 1.2;
+    width: 100%;
+    text-align: center;
+    margin: 0;
+  }
+
+  /* Buton boyutlarını küçült */
+  .fc .fc-button {
+    padding: 6px 8px !important;
+    font-size: 12px !important;
+    margin: 5px;
+    border-radius: 10px !important;
+  }
+
+  .fc .fc-today-button {
+    display: none !important;
+  }
+
+  /* Icon gibi görünen prev/next için daha da kompakt */
+  .fc .fc-prev-button,
+  .fc .fc-next-button {
+    padding: 6px 8px !important;
   }
 }

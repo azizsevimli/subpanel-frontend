@@ -2,31 +2,36 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+
 import api from "@/lib/api";
+
 import LoadingSpinner from "@/components/loading-spinner";
+
+function pad2(n) {
+    return String(n).padStart(2, "0");
+}
 
 function ymdLocal(date) {
     const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
+    const m = pad2(date.getMonth() + 1);
+    const d = pad2(date.getDate());
     return `${y}-${m}-${d}`;
 }
 
-// Pazartesi başlangıçlı hafta (Mon-Sun)
-function startOfWeekMonday(d) {
-    const date = new Date(d);
-    const day = date.getDay(); // 0 Sun ... 6 Sat
-    const diff = (day === 0 ? -6 : 1) - day; // Monday = 1
+function startOfWeekMonday(input) {
+    const date = new Date(input);
+    const day = date.getDay();
+    const diff = (day === 0 ? -6 : 1) - day;
     date.setDate(date.getDate() + diff);
     date.setHours(0, 0, 0, 0);
     return date;
 }
 
-function addDays(d, n) {
-    const x = new Date(d);
-    x.setDate(x.getDate() + n);
-    x.setHours(0, 0, 0, 0);
-    return x;
+function addDays(input, n) {
+    const d = new Date(input);
+    d.setDate(d.getDate() + n);
+    d.setHours(0, 0, 0, 0);
+    return d;
 }
 
 function sameYmd(a, b) {
@@ -34,30 +39,36 @@ function sameYmd(a, b) {
 }
 
 function fmtDayLabel(d) {
-    return d.toLocaleDateString(undefined, { weekday: "short" }); // Mon, Tue...
+    return d.toLocaleDateString(undefined, { weekday: "short" });
 }
 
 function fmtDateLabel(d) {
-    return d.toLocaleDateString(undefined, { day: "2-digit", month: "short" }); // 03 Jan
+    return d.toLocaleDateString(undefined, { day: "2-digit", month: "short" });
 }
 
 function formatAmount(amount, currency) {
-    if (amount == null) return "";
-    const n = Number(amount); // backend string/decimal gelebilir
+    const n = Number(amount);
     if (!Number.isFinite(n)) return "";
     return `${n.toFixed(2)} ${currency || ""}`.trim();
+}
+
+function isRenewalEvent(e) {
+    return String(e?.type || "").toUpperCase() === "RENEWAL";
 }
 
 export default function WeeklyPaymentsCalendar() {
     const router = useRouter();
 
+    const [today] = useState(() => new Date());
     const [loading, setLoading] = useState(true);
-    const [items, setItems] = useState([]); // calendar events
+    const [items, setItems] = useState([]);
     const [error, setError] = useState("");
 
-    const today = useMemo(() => new Date(), []);
     const weekStart = useMemo(() => startOfWeekMonday(today), [today]);
-    const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+    const weekDays = useMemo(
+        () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
+        [weekStart]
+    );
 
     const range = useMemo(() => {
         const from = ymdLocal(weekDays[0]);
@@ -66,40 +77,40 @@ export default function WeeklyPaymentsCalendar() {
     }, [weekDays]);
 
     useEffect(() => {
-        let mounted = true;
+        const controller = new AbortController();
 
         async function fetchWeek() {
             try {
                 setLoading(true);
                 setError("");
 
-                const res = await api.get(`/calendar/events?from=${range.from}&to=${range.to}`);
+                const res = await api.get(
+                    `/calendar/events?from=${range.from}&to=${range.to}`,
+                    { signal: controller.signal }
+                );
 
-                // ✅ Bu haftada sadece "ödeme günü" = RENEWAL gösterelim
                 const raw = Array.isArray(res.data?.items) ? res.data.items : [];
-                const renewalsOnly = raw.filter((e) => String(e?.type || "").toUpperCase() === "RENEWAL");
+                const renewalsOnly = raw.filter(isRenewalEvent);
 
-                if (!mounted) return;
                 setItems(renewalsOnly);
             } catch (err) {
+                if (err?.name === "CanceledError" || err?.name === "AbortError") return;
+
                 console.error(err);
-                if (!mounted) return;
-                setError(err?.response?.data?.message || "Bu haftanın ödeme kayıtları alınamadı.");
+                setError(err?.response?.data?.message || "Failed to load this week's payments.");
                 setItems([]);
             } finally {
-                if (mounted) setLoading(false);
+                setLoading(false);
             }
         }
 
         fetchWeek();
-        return () => {
-            mounted = false;
-        };
+        return () => controller.abort();
     }, [range.from, range.to]);
 
     const byDay = useMemo(() => {
-        // items: [{ id, title, date:'YYYY-MM-DD', subscriptionId, type, ... }]
-        const map = new Map(); // ymd -> items[]
+        const map = new Map();
+
         for (const d of weekDays) map.set(ymdLocal(d), []);
 
         for (const e of items) {
@@ -111,27 +122,31 @@ export default function WeeklyPaymentsCalendar() {
         return map;
     }, [items, weekDays]);
 
-    const totalThisWeek = useMemo(() => items.length, [items]);
+    const totalThisWeek = items.length;
 
     return (
-        <section className="rounded-3xl border border-jet p-6 space-y-4">
+        <section className="px-3 py-6 md:p-6 rounded-2xl md:rounded-3xl border border-jet space-y-4">
             <div className="flex items-start justify-between gap-4">
                 <div>
                     <h2 className="text-lg font-semibold">This Week</h2>
                     <p className="text-sm text-silver">
-                        Payments / renewals for {range.from} → {range.to} • Total: {totalThisWeek}
+                        Payments / renewals for
+                        <br />
+                        <span className="font-semibold text-info">{range.from} → {range.to}</span>
+                        <br />
+                        Total: {totalThisWeek}
                     </p>
                 </div>
             </div>
 
             {error ? (
-                <p className="text-sm text-wrong border border-wrong/40 rounded-xl px-4 py-2">
+                <p className="px-4 py-2 rounded-xl text-wrong border border-wrong/40 text-sm">
                     {error}
                 </p>
             ) : null}
 
             <div className="relative">
-                <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-3">
                     {weekDays.map((d) => {
                         const key = ymdLocal(d);
                         const dayItems = byDay.get(key) || [];
@@ -140,7 +155,10 @@ export default function WeeklyPaymentsCalendar() {
                         return (
                             <div
                                 key={key}
-                                className={`rounded-2xl border border-jet p-3 space-y-2 ${isToday ? "bg-jet/40" : ""}`}
+                                className={[
+                                    "px-2 py-3 md:p-3 rounded-xl md:rounded-2xl border border-jet space-y-2",
+                                    isToday ? "bg-jet/40" : "",
+                                ].join(" ")}
                             >
                                 <div className="flex items-center justify-between">
                                     <div>
@@ -156,21 +174,33 @@ export default function WeeklyPaymentsCalendar() {
                                     <div className="space-y-2">
                                         {dayItems.map((e) => {
                                             const amountText = formatAmount(e?.amount, e?.currency);
+                                            const title =
+                                                e?.platform?.name
+                                                    ? `${e.platform.name} • Payment`
+                                                    : (e?.title || "Payment");
+
+                                            const canOpen = Boolean(e?.subscriptionId);
 
                                             return (
                                                 <button
                                                     key={e.id}
                                                     type="button"
+                                                    disabled={!canOpen}
                                                     onClick={() => {
-                                                        if (e.subscriptionId) router.push(`/my-subscriptions/edit/${e.subscriptionId}`);
+                                                        if (canOpen) {
+                                                            router.push(`/my-subscriptions/edit/${e.subscriptionId}`);
+                                                        }
                                                     }}
-                                                    className="w-full text-left rounded-xl border border-jet px-3 py-2 hover:bg-jet transition"
-                                                    title="Open subscription"
+                                                    className={[
+                                                        "w-full px-3 py-2 rounded-lg md:rounded-xl border border-jet bg-info transition text-left",
+                                                        canOpen
+                                                            ? "hover:bg-info/60 cursor-pointer"
+                                                            : "opacity-60 cursor-not-allowed",
+                                                    ].join(" ")}
+                                                    title={canOpen ? "Open subscription" : "Subscription not found"}
                                                 >
-                                                    <p className="text-sm font-medium truncate">
-                                                        {e?.platform?.name ? `${e.platform.name} • Payment` : (e.title || "Payment")}
-                                                    </p>
-                                                    <p className="text-xs text-silver truncate">
+                                                    <p className="text-sm text-eerie font-medium truncate">{title}</p>
+                                                    <p className="text-xs text-jet truncate">
                                                         {amountText ? amountText : "Amount not set"}
                                                     </p>
                                                 </button>

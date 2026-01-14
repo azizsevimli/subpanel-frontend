@@ -11,7 +11,7 @@ export default function PlatformFieldsSection({
     onChangeFieldValue,
 }) {
     return (
-        <section className="rounded-3xl border border-jet p-6 space-y-4">
+        <section className=" px-3 py-6 md:p-6 rounded-2xl md:rounded-3xl border border-jet space-y-4">
             <h2 className="text-lg font-semibold">Platform Fields</h2>
 
             {!selectedPlatformId ? (
@@ -27,7 +27,7 @@ export default function PlatformFieldsSection({
             ) : (
                 <div className="space-y-5">
                     {fields.map((f) => (
-                        <div key={f.id} className="p-5 rounded-3xl border border-jet">
+                        <div key={f.id}>
                             <FieldPreview
                                 field={f}
                                 value={fieldValues?.[f.id]}

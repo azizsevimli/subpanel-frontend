@@ -1,26 +1,37 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import api from "@/lib/api";
+import Image from "next/image";
+
+import { LayoutGrid, Plus, Pencil, Trash2 } from "lucide-react";
+
 import { useAuth } from "@/context/AuthContext";
 import { useDashboardCharts } from "@/hooks/useDashboardCharts";
+import { useDashboardOverview } from "@/hooks/useDashboardOverview";
+import { toAbsoluteUrl } from "@/lib/uploads";
+
+import LoadingSpinner from "@/components/loading-spinner";
+import BorderButton from "@/components/buttons/border-button";
+import AddSubButton from "@/components/buttons/add-subscription";
 import MonthlySpendChart from "@/components/main/dashboard/monthly-spend-chart";
 import PlatformSpendPie from "@/components/main/dashboard/platform-spend-pie";
 import RenewalsWeekBar from "@/components/main/dashboard/renewals-week-bar";
-import LoadingSpinner from "@/components/loading-spinner";
-import BorderButton from "@/components/buttons/border-button";
-import Image from "next/image";
-import { toAbsoluteUrl } from "@/lib/uploads";
-import { LayoutGrid, Plus, Pencil, Trash2 } from "lucide-react";
 import WeeklyPaymentsCalendar from "@/components/main/dashboard/weekly-payments-calendar";
 
+function FullPageSpinner() {
+    return (
+        <main className="flex items-center justify-center h-screen text-smoke">
+            <LoadingSpinner />
+        </main>
+    );
+}
 
 function StatCard({ title, value, subtitle }) {
     return (
-        <div className="rounded-3xl border border-jet p-6 space-y-1">
+        <div className="px-3 py-6 md:p-6 rounded-2xl md:rounded-3xl border border-jet space-y-1">
             <p className="text-sm text-silver">{title}</p>
-            <p className="text-2xl font-semibold">{value}</p>
+            <p className="text-2xl font-semibold whitespace-pre-line">{value}</p>
             {subtitle ? <p className="text-xs text-silver">{subtitle}</p> : null}
         </div>
     );
@@ -37,121 +48,96 @@ export default function UserDashboardPage() {
     const router = useRouter();
     const { initialLoading, isAuthenticated } = useAuth();
 
-    const [stats, setStats] = useState(null);
-    const [recent, setRecent] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState("");
-    const enabled = !initialLoading && isAuthenticated;
-    const { data: charts, loading: chartsLoading, error: chartsError } = useDashboardCharts({ enabled, months: 6 });
-
-    async function fetchDashboard() {
-        try {
-            setLoading(true);
-            setError("");
-
-            const res = await api.get("/dashboard");
-
-            // ✅ Defensive: response shape değişse bile kırılma
-            setStats(res.data?.stats || null);
-            setRecent(Array.isArray(res.data?.recentSubscriptions) ? res.data.recentSubscriptions : []);
-        } catch (err) {
-            console.error(err);
-            setError(err?.response?.data?.message || "Dashboard verisi alınırken hata oluştu.");
-            setStats(null);
-            setRecent([]);
-        } finally {
-            setLoading(false);
-        }
-    }
-
     useEffect(() => {
         if (initialLoading) return;
+        if (!isAuthenticated) router.replace("/login");
+    }, [initialLoading, isAuthenticated, router]);
 
-        if (!isAuthenticated) {
-            router.replace("/login");
-            return;
-        }
+    const enabled = !initialLoading && isAuthenticated;
 
-        fetchDashboard();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [initialLoading, isAuthenticated]);
+    const {
+        stats,
+        recent,
+        loading: overviewLoading,
+        error: overviewError,
+        deleteSubscription,
+    } = useDashboardOverview({ enabled });
 
-    async function handleDelete(id) {
-        const ok = window.confirm("Bu abonelik silinsin mi?");
-        if (!ok) return;
-
-        try {
-            setError("");
-            await api.delete(`/subscriptions/${id}`);
-            setRecent((prev) => prev.filter((x) => x.id !== id));
-            fetchDashboard();
-        } catch (err) {
-            console.error(err);
-            setError(err?.response?.data?.message || "Silme sırasında hata oluştu.");
-        }
-    }
+    const {
+        data: charts,
+        loading: chartsLoading,
+        error: chartsError,
+    } = useDashboardCharts({ enabled, months: 6 });
 
     const monthlySpendText = useMemo(() => {
+        // 1) Backend tek currency döndürüyorsa onu kullan
         const amount = stats?.monthlySpend?.amount;
         const currency = stats?.monthlySpend?.currency;
-        if (amount == null) return "Not available yet";
-        const n = Number(amount);
-        if (!Number.isFinite(n)) return "Not available yet";
-        return `${n.toFixed(2)} ${currency || ""}`.trim();
-    }, [stats]);
+        if (amount != null && Number.isFinite(Number(amount))) {
+            return `${Number(amount).toFixed(2)} ${currency || ""}`.trim();
+        }
 
-    if (initialLoading || (!initialLoading && !isAuthenticated)) {
-        return (
-            <main className="flex items-center justify-center h-screen text-smoke">
-                <LoadingSpinner />
-            </main>
-        );
-    }
+        // 2) Fallback: charts'tan currency bazlı aylık harcama al
+        const series = charts?.monthlySpendSeries;
+        if (!Array.isArray(series) || series.length === 0) return "Not available yet";
 
-    if (loading) {
-        return (
-            <main className="flex items-center justify-center h-screen text-smoke">
-                <LoadingSpinner />
-            </main>
-        );
-    }
+        // her currency için en son ayın amount'unu göster
+        const parts = series
+            .map((s) => {
+                const points = Array.isArray(s?.points) ? s.points : [];
+                const last = points[points.length - 1];
+                const n = Number(last?.amount);
+                if (!Number.isFinite(n)) return null;
+                return `${n.toFixed(2)} ${s.currency}`;
+            })
+            .filter(Boolean);
+
+        return parts.length ? parts.join("\n") : "Not available yet";
+    }, [stats, charts]);
+
+    const handleDelete = useCallback(
+        async (id) => {
+            const ok = window.confirm("Delete this subscription?");
+            if (!ok) return;
+            await deleteSubscription(id);
+        },
+        [deleteSubscription]
+    );
+
+    if (initialLoading) return <FullPageSpinner />;
+    if (!isAuthenticated) return <FullPageSpinner />;
+    if (overviewLoading) return <FullPageSpinner />;
 
     return (
         <main className="text-smoke">
             <div className="space-y-6">
-                <div className="flex items-start justify-between gap-4">
+                <div className="grid grid-cols-1 lg:flex lg:items-start lg:justify-between gap-4">
                     <div>
                         <h1 className="text-2xl font-semibold">Dashboard</h1>
                         <p className="text-sm text-silver">Subscriptions overview and quick actions.</p>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="grid md:grid-cols-2 grid-cols-1 lg:flex lg:items-center gap-3">
                         <BorderButton
                             text="All Subscriptions"
                             icon={<LayoutGrid size={16} strokeWidth={3} />}
                             onClick={() => router.push("/my-subscriptions")}
                         />
-                        <BorderButton
-                            text="Add Subscription"
-                            icon={<Plus size={16} strokeWidth={3} />}
-                            onClick={() => router.push("/my-subscription/add-subscription")}
-                        />
+                        <AddSubButton />
                     </div>
                 </div>
 
-                {error && (
+                {overviewError ? (
                     <p className="text-sm text-wrong border border-wrong/40 rounded-xl px-4 py-2">
-                        {error}
+                        {overviewError}
                     </p>
-                )}
+                ) : null}
 
-                {
-                    chartsError && (
-                        <p className="text-sm text-wrong border border-wrong/40 rounded-xl px-4 py-2">
-                            {chartsError}
-                        </p>
-                    )
-                }
+                {chartsError ? (
+                    <p className="text-sm text-wrong border border-wrong/40 rounded-xl px-4 py-2">
+                        {chartsError}
+                    </p>
+                ) : null}
 
                 {/* KPI Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -161,7 +147,10 @@ export default function UserDashboardPage() {
                         value={stats?.activeSubscriptions ?? 0}
                         subtitle="Based on status"
                     />
-                    <StatCard title="Unique Platforms" value={stats?.uniquePlatforms ?? 0} />
+                    <StatCard
+                        title="Unique Platforms"
+                        value={stats?.uniquePlatforms ?? 0}
+                    />
                     <StatCard
                         title="Monthly Spend (estimate)"
                         value={monthlySpendText}
@@ -178,8 +167,7 @@ export default function UserDashboardPage() {
                         <>
                             <MonthlySpendChart series={charts.monthlySpendSeries} />
 
-                            {/* Pie: Multi currency ise ilk currency’yi göster (MVP) */}
-                            <PlatformSpendPie byCurrency={charts.spendByPlatform?.[0]} />
+                            <PlatformSpendPie groups={charts.spendByPlatform} />
 
                             <div className="xl:col-span-2">
                                 <RenewalsWeekBar data={charts.renewalsThisMonth} />
@@ -190,9 +178,8 @@ export default function UserDashboardPage() {
 
                 <WeeklyPaymentsCalendar />
 
-
                 {/* Recent */}
-                <section className="rounded-3xl border border-jet p-6 space-y-4">
+                <section className="px-3 py-6 md:p-6 rounded-2xl md:rounded-3xl border border-jet space-y-4">
                     <div className="flex items-center justify-between">
                         <h2 className="text-lg font-semibold">Recent Subscriptions</h2>
                     </div>
@@ -206,6 +193,7 @@ export default function UserDashboardPage() {
                             {recent.map((s) => {
                                 const createdText = safeDateText(s?.createdAt);
                                 const logo = s?.platform?.logoUrl ? toAbsoluteUrl(s.platform.logoUrl) : "";
+
                                 const fieldsCount =
                                     (typeof s?.fieldsCount === "number" ? s.fieldsCount : null) ??
                                     (Array.isArray(s?.fields) ? s.fields.length : 0);
@@ -216,7 +204,7 @@ export default function UserDashboardPage() {
                                     : "";
 
                                 return (
-                                    <div key={s.id} className="rounded-3xl border border-jet p-5 space-y-3">
+                                    <div key={s.id} className="px-3 py-6 md:p-6 rounded-2xl md:rounded-3xl border border-jet space-y-3">
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-3 min-w-0">
                                                 {logo ? (
@@ -246,7 +234,8 @@ export default function UserDashboardPage() {
                                             Fields: <span className="text-smoke">{fieldsCount}</span>
                                             {amountText ? (
                                                 <>
-                                                    {" "}• Amount: <span className="text-smoke">{amountText}</span>
+                                                    {" "}
+                                                    • Amount: <span className="text-smoke">{amountText}</span>
                                                 </>
                                             ) : null}
                                         </div>
@@ -256,13 +245,16 @@ export default function UserDashboardPage() {
                                                 onClick={() => router.push(`/my-subscriptions/edit/${s.id}`)}
                                                 className="px-3 py-2 rounded-full border border-jet hover:bg-jet transition"
                                                 title="Edit"
+                                                type="button"
                                             >
                                                 <Pencil size={16} />
                                             </button>
+
                                             <button
                                                 onClick={() => handleDelete(s.id)}
                                                 className="px-3 py-2 rounded-full border border-jet hover:bg-jet transition text-wrong"
                                                 title="Delete"
+                                                type="button"
                                             >
                                                 <Trash2 size={16} />
                                             </button>
@@ -272,14 +264,6 @@ export default function UserDashboardPage() {
                             })}
                         </div>
                     )}
-                </section>
-
-                {/* Coming soon */}
-                <section className="rounded-3xl border border-jet p-6">
-                    <p className="text-sm text-silver">Coming soon</p>
-                    <p className="mt-2 text-sm">
-                        Calendar view, billing reminders, and monthly charts will appear here.
-                    </p>
                 </section>
             </div>
         </main>
